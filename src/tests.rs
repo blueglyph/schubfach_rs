@@ -73,7 +73,7 @@ fn visual_dtoa() {
         let exp = if value.is_finite() && value.abs() > 1e-3 && value.abs() < 1e3 {
             value.to_string()
         } else {
-            format!("{value:e}").replace("e1", "e+1")
+            format!("{value:e}")
         };
         let res = dtoa(value);
         if exp != res {

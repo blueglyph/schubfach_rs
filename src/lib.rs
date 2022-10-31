@@ -1167,9 +1167,13 @@ unsafe fn format_digits(mut buffer: *mut u8, fd: &FloatingDecimal64, force_trail
         }
 
         let scientific_exponent = decimal_point - 1;
-        ptr::copy(if scientific_exponent < 0 { b"e-" } else { b"e+" } as *const u8, buffer, 2);
-        buffer = buffer.add(2);
-
+        if scientific_exponent < 0 {
+            ptr::copy(b"e-" as *const u8, buffer, 2);
+            buffer = buffer.add(2);
+        } else {
+            *buffer = b'e';
+            buffer = buffer.add(1);
+        }
         let k = scientific_exponent.abs() as u32;
         if k < 10 {
             *buffer = b'0' + k as u8;
@@ -1241,7 +1245,7 @@ pub unsafe fn to_chars(mut buffer: *mut u8, value: f64, force_trailing_dot_zero:
 ///
 /// assert_eq!(dtoa(12.3456789), "12.3456789");
 /// assert_eq!(dtoa(1.5e-300), "1.5e-300");
-/// assert_eq!(dtoa(-1.5e+300), "-1.5e+300");
+/// assert_eq!(dtoa(-1.5e300), "-1.5e300");
 /// ```
 ///
 /// The output format is similar to `{f}` except for large absolute exponent values where
