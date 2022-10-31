@@ -789,9 +789,11 @@ struct FloatingDecimal64 {
     exponent: i32
 }
 
-impl FloatingDecimal64 {
+impl From<Double> for FloatingDecimal64 {
     /// Builds the decimal representation from extracted IEEE-754 fraction and exponent
-    fn from_ieee754(ieee_fraction: u64, ieee_exponent: u64) -> Self {
+    fn from(double: Double) -> Self {
+        let ieee_fraction = double.physical_fraction();
+        let ieee_exponent = double.physical_exponent();
         let c: u64;
         let q: i32;
         if ieee_exponent != 0 {
@@ -1087,7 +1089,7 @@ fn decimal_length(v: u64) -> u32 {
 /// * `force_trailing_dot_zero`: includes the trailing ".0" for integer values
 ///
 /// Returns the first unused `end` position in the buffer, so that length = `end` - `buffer`.
-unsafe fn format_digits(mut buffer: *mut u8, digits: u64, decimal_exponent: i32, force_trailing_dot_zero: bool) -> *mut u8 {
+unsafe fn format_digits(mut buffer: *mut u8, fd: &FloatingDecimal64, force_trailing_dot_zero: bool) -> *mut u8 {
     let min_fixed_decimal_point: i32 = -6;
     let max_fixed_decimal_point: i32 =  17;
     debug_assert!(min_fixed_decimal_point <= -1, "internal error");
@@ -1095,13 +1097,15 @@ unsafe fn format_digits(mut buffer: *mut u8, digits: u64, decimal_exponent: i32,
     debug_assert!(min_fixed_decimal_point >= -30, "internal error");
     debug_assert!(max_fixed_decimal_point <=  32, "internal error");
 
+    let digits = fd.digits;
+    let exponent = fd.exponent;
     debug_assert!(digits >= 1);
     debug_assert!(digits <= 99_999_999_999_999_999_u64);
-    debug_assert!(decimal_exponent >= -999);
-    debug_assert!(decimal_exponent <=  999);
+    debug_assert!(exponent >= -999);
+    debug_assert!(exponent <=  999);
 
     let mut num_digits = decimal_length(digits);
-    let decimal_point = num_digits as i32 + decimal_exponent;
+    let decimal_point = num_digits as i32 + exponent;
     let use_fixed = min_fixed_decimal_point <= decimal_point && decimal_point <= max_fixed_decimal_point;
 
     // Prepare the buffer.
@@ -1205,26 +1209,21 @@ const TO_CHARS_MIN_BUFFER_LEN: usize = 64;
 ///
 /// Note:
 /// This function may temporarily write up to TO_CHARS_MIN_BUFFER_LEN characters into the buffer.
-unsafe fn to_chars(mut buffer: *mut u8, value: f64, force_trailing_dot_zero: bool) -> *mut u8 {
+pub unsafe fn to_chars(mut buffer: *mut u8, value: f64, force_trailing_dot_zero: bool) -> *mut u8 {
     let v = Double::from(value);
-
-    let fraction = v.physical_fraction();
-    let exponent = v.physical_exponent();
-
-    if exponent != MAX_IEEE_EXPONENT {
+    if v.is_finite() {
         // Finite
         *buffer = b'-';
         buffer = buffer.add(v.sign_bit());
-        if exponent != 0 || fraction != 0 {
-            // != 0
-            let dec = FloatingDecimal64::from_ieee754(fraction, exponent);
-            return format_digits(buffer, dec.digits, dec.exponent, force_trailing_dot_zero);
-        } else {
+        if v.is_zero() {
             ptr::copy(b"0.0 " as *const u8, buffer, 4);
             buffer = buffer.add(if force_trailing_dot_zero { 3 } else { 1 });
             return buffer;
+        } else {
+            let dec = FloatingDecimal64::from(v);
+            return format_digits(buffer, &dec, force_trailing_dot_zero);
         }
-    } else if fraction == 0 {
+    } else if v.is_inf() {
         *buffer = b'-';
         buffer = buffer.add(v.sign_bit());
         ptr::copy(b"inf " as *const u8, buffer, 4);
