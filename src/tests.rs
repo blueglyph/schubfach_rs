@@ -13,26 +13,26 @@ use crate::*;
 #[test]
 fn test_double() {
     // constants for double-precision encoding
-    assert_eq!(SignificandSize, 53);
-    assert_eq!(ExponentBias,    1075);
-    assert_eq!(MaxIeeeExponent, 2047);
-    assert_eq!(HiddenBit,       0x0010000000000000);
-    assert_eq!(FractionMask,    0x000fffffffffffff);
-    assert_eq!(ExponentMask,    0x7ff0000000000000);
-    assert_eq!(SignMask,        0x8000000000000000);
+    assert_eq!(SIGNIFICAND_SIZE, 53);
+    assert_eq!(EXPONENT_BIAS, 1075);
+    assert_eq!(MAX_IEEE_EXPONENT, 2047);
+    assert_eq!(HIDDEN_BIT, 0x0010000000000000);
+    assert_eq!(FRACTION_MASK, 0x000fffffffffffff);
+    assert_eq!(EXPONENT_MASK, 0x7ff0000000000000);
+    assert_eq!(SIGN_MASK, 0x8000000000000000);
 
     // base methods
     for f in vec![1.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 0.0, 1e10, -1.5e-8] {
         let x = Double::from(f);
         let report = format!("test failed for f = {f}");
-        assert_eq!(x.IsNaN(), f.is_nan(), "{report}");
-        assert_eq!(x.IsInf(), f.is_infinite(), "{report}");
-        assert_eq!(x.IsZero(), f.is_zero(), "{report}");
-        if x.IsFinite() {
+        assert_eq!(x.is_nan(), f.is_nan(), "{report}");
+        assert_eq!(x.is_inf(), f.is_infinite(), "{report}");
+        assert_eq!(x.is_zero(), f.is_zero(), "{report}");
+        if x.is_finite() {
             let (significand, exponent, sign) = f.integer_decode();
-            assert_eq!(significand & !HiddenBit, x.PhysicalFraction(), "{report}");
-            assert_eq!(exponent + ExponentBias as i16, (x.PhysicalExponent() as i16), "{report}");
-            assert_eq!((1 - sign) / 2, x.SignBit() as i8, "{report}");
+            assert_eq!(significand & !HIDDEN_BIT, x.physical_fraction(), "{report}");
+            assert_eq!(exponent + EXPONENT_BIAS as i16, (x.physical_exponent() as i16), "{report}");
+            assert_eq!((1 - sign) / 2, x.sign_bit() as i8, "{report}");
         }
     }
 }

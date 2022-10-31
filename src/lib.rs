@@ -19,9 +19,6 @@
 //      (See accompanying file LICENSE_1_0.txt or copy at https://www.boost.org/LICENSE_1_0.txt)
 
 #![allow(dead_code)]
-#![allow(non_camel_case_types)]
-#![allow(non_snake_case)]
-#![allow(non_upper_case_globals)]
 
 mod tests;
 
@@ -43,13 +40,13 @@ type BitsType = u64;
 const MAX_DIGITS_10: i32 = 53;
 const MAX_EXPONENT: i32 = 1024;
 
-const SignificandSize: i32 = MAX_DIGITS_10;
-const ExponentBias: i32 = MAX_EXPONENT - 1 + (SignificandSize - 1);
-const MaxIeeeExponent: BitsType = (2 * MAX_EXPONENT - 1) as BitsType;
-const HiddenBit: BitsType = (1 as BitsType) << (SignificandSize - 1);
-const FractionMask: BitsType = HiddenBit - 1;
-const ExponentMask: BitsType = MaxIeeeExponent << (SignificandSize - 1);
-const SignMask: BitsType = (1 as BitsType) << 63;
+const SIGNIFICAND_SIZE: i32 = MAX_DIGITS_10;
+const EXPONENT_BIAS: i32 = MAX_EXPONENT - 1 + (SIGNIFICAND_SIZE - 1);
+const MAX_IEEE_EXPONENT: BitsType = (2 * MAX_EXPONENT - 1) as BitsType;
+const HIDDEN_BIT: BitsType = (1 as BitsType) << (SIGNIFICAND_SIZE - 1);
+const FRACTION_MASK: BitsType = HIDDEN_BIT - 1;
+const EXPONENT_MASK: BitsType = MAX_IEEE_EXPONENT << (SIGNIFICAND_SIZE - 1);
+const SIGN_MASK: BitsType = (1 as BitsType) << 63;
 
 #[derive(Debug)]
 /// IEEE-754 double-precision floating-point value
@@ -64,38 +61,38 @@ impl Double {
     }
 
     /// Fraction component (significand without its hidden MSB)
-    fn PhysicalFraction(&self) -> BitsType {
-        self.bits & FractionMask
+    fn physical_fraction(&self) -> BitsType {
+        self.bits & FRACTION_MASK
     }
 
     /// Exponent component
-    fn PhysicalExponent(&self) -> BitsType {
-        (self.bits & ExponentMask) >> (SignificandSize - 1)
+    fn physical_exponent(&self) -> BitsType {
+        (self.bits & EXPONENT_MASK) >> (SIGNIFICAND_SIZE - 1)
     }
 
     /// Whether the value is finite in the form `-1 ^ sign * (1.fraction) * 2 ^ (e - 1023)`
-    fn IsFinite(&self) -> bool {
-        (self.bits & ExponentMask) != ExponentMask
+    fn is_finite(&self) -> bool {
+        (self.bits & EXPONENT_MASK) != EXPONENT_MASK
     }
 
     /// Whether the value is positive / negative infinity
-    fn IsInf(&self) -> bool {
-        (self.bits & ExponentMask) == ExponentMask && (self.bits & FractionMask) == 0
+    fn is_inf(&self) -> bool {
+        (self.bits & EXPONENT_MASK) == EXPONENT_MASK && (self.bits & FRACTION_MASK) == 0
     }
 
     /// Whether the value is not a number (neither finite or infinite)
-    fn IsNaN(&self) -> bool {
-        (self.bits & ExponentMask) == ExponentMask && (self.bits & FractionMask) != 0
+    fn is_nan(&self) -> bool {
+        (self.bits & EXPONENT_MASK) == EXPONENT_MASK && (self.bits & FRACTION_MASK) != 0
     }
 
     /// Whether the value is null
-    fn IsZero(&self) -> bool {
-        (self.bits & !SignMask) == 0
+    fn is_zero(&self) -> bool {
+        (self.bits & !SIGN_MASK) == 0
     }
 
     /// Sign: 0 = positive, 1 = negative
-    fn SignBit(&self) -> usize {
-        usize::from(self.bits & SignMask != 0)
+    fn sign_bit(&self) -> usize {
+        usize::from(self.bits & SIGN_MASK != 0)
     }
 }
 
@@ -110,17 +107,17 @@ impl From<f64> for Double {
 
 #[inline]
 /// Returns floor([x] / 2^[n])
-fn FloorDivPow2(x: i32, n: i32) -> i32 {
+fn floor_div_pow2(x: i32, n: i32) -> i32 {
     x >> n
 }
 
 
 #[inline]
 /// Returns floor(log_2(10^[x]))
-fn FloorLog2Pow10(x: i32) -> i32
+fn floor_log2_pow10(x: i32) -> i32
 {
     debug_assert!(-1233 <= x && x <=  1233);
-    FloorDivPow2(x * 1741647, 19)
+    floor_div_pow2(x * 1741647, 19)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -760,16 +757,16 @@ const POW10_TABLE: &[U64x2] = &[
     U64x2::from_tuple((0x9E19DB92B4E31BA9, 0x6C07A2C26A8346D2)), //  324
 ];
 
-const kMin: i32 = -292;
-const kMax: i32 =  324;
+const K_MIN: i32 = -292;
+const K_MAX: i32 =  324;
 
 /// Computes 10^`x` for -292 <= `x` <= 324. The result is an [U64x2] 128-bit value.
-fn ComputePow10_Double(x: i32) -> U64x2 {
-    debug_assert!(kMin <= x && x <= kMax);
-    POW10_TABLE[(x - kMin) as usize]
+fn compute_pow10_double(x: i32) -> U64x2 {
+    debug_assert!(K_MIN <= x && x <= K_MAX);
+    POW10_TABLE[(x - K_MIN) as usize]
 }
 
-fn RoundToOdd(g: U64x2, cp: u64) -> u64 {
+fn round_to_odd(g: U64x2, cp: u64) -> u64 {
     let x = cp as u128 * g.lo as u128;
     let y = cp as u128 * g.hi as u128 + (x >> 64);
 
@@ -779,7 +776,7 @@ fn RoundToOdd(g: U64x2, cp: u64) -> u64 {
 }
 
 /// Returns whether value is divisible by 2^e2
-fn MultipleOfPow2(value: u64, e2: i32) -> bool {
+fn multiple_of_pow2(value: u64, e2: i32) -> bool {
     debug_assert!(0 <= e2 && e2 <= 64);
     return (value & ((1_u64 << e2) - 1)) == 0;
 }
@@ -798,14 +795,14 @@ impl FloatingDecimal64 {
         let c: u64;
         let q: i32;
         if ieee_exponent != 0 {
-            c = HiddenBit | ieee_fraction;
-            q = ieee_exponent as i32 - ExponentBias;
-            if 0 <= -q && -q < SignificandSize && MultipleOfPow2(c, -q) {
+            c = HIDDEN_BIT | ieee_fraction;
+            q = ieee_exponent as i32 - EXPONENT_BIAS;
+            if 0 <= -q && -q < SIGNIFICAND_SIZE && multiple_of_pow2(c, -q) {
                 return FloatingDecimal64 { digits: c >> -q, exponent: 0};
             }
         } else {
             c = ieee_fraction;
-            q = 1 - ExponentBias;
+            q = 1 - EXPONENT_BIAS;
         }
 
         let is_even: bool = c % 2 == 0;
@@ -821,14 +818,14 @@ impl FloatingDecimal64 {
         // (q * 1262611         ) >> 22 == floor(log_10(    2^q))
         // (q * 1262611 - 524031) >> 22 == floor(log_10(3/4 2^q))
         debug_assert!(-1500 <= q && q <= 1500);
-        let k: i32 = FloorDivPow2(q * 1262611 - if lower_boundary_is_closer { 524031 } else { 0 }, 22);
-        let h: i32 = q + FloorLog2Pow10(-k) + 1;
+        let k: i32 = floor_div_pow2(q * 1262611 - if lower_boundary_is_closer { 524031 } else { 0 }, 22);
+        let h: i32 = q + floor_log2_pow10(-k) + 1;
         debug_assert!(1 <= h && h <= 4);
 
-        let pow10: U64x2 = ComputePow10_Double(-k);
-        let vbl: u64 = RoundToOdd(pow10, cbl << h);
-        let vb: u64  = RoundToOdd(pow10, cb  << h);
-        let vbr: u64 = RoundToOdd(pow10, cbr << h);
+        let pow10: U64x2 = compute_pow10_double(-k);
+        let vbl: u64 = round_to_odd(pow10, cbl << h);
+        let vb: u64  = round_to_odd(pow10, cb  << h);
+        let vbr: u64 = round_to_odd(pow10, cbr << h);
 
         let lower: u64 = vbl + u64::from(!accept_lower);
         let upper: u64 = vbr - u64::from(!accept_upper);
@@ -869,8 +866,8 @@ impl FloatingDecimal64 {
 /// * `buf`: destination buffer
 /// * `offset`: offset of 1st digit in destination buffer
 /// * `digits`: integer, 0 <= digits <= 99
-fn Utoa_2Digits(buf: *mut u8, offset: usize, digits: u32) {
-    const Digits100: &[u8; 200] = &[
+fn utoa_2digits(buf: *mut u8, offset: usize, digits: u32) {
+    const DIGITS100: &[u8; 200] = &[
         b'0', b'0', b'0', b'1', b'0', b'2', b'0', b'3', b'0', b'4', b'0', b'5', b'0', b'6', b'0', b'7', b'0', b'8', b'0', b'9',
         b'1', b'0', b'1', b'1', b'1', b'2', b'1', b'3', b'1', b'4', b'1', b'5', b'1', b'6', b'1', b'7', b'1', b'8', b'1', b'9',
         b'2', b'0', b'2', b'1', b'2', b'2', b'2', b'3', b'2', b'4', b'2', b'5', b'2', b'6', b'2', b'7', b'2', b'8', b'2', b'9',
@@ -886,13 +883,13 @@ fn Utoa_2Digits(buf: *mut u8, offset: usize, digits: u32) {
     debug_assert!(digits <= 99);
     unsafe {
         // code is optimized to a single movw:
-        ptr::copy_nonoverlapping(Digits100.as_ptr().add(2 * digits as usize), buf.add(offset), 2);
+        ptr::copy_nonoverlapping(DIGITS100.as_ptr().add(2 * digits as usize), buf.add(offset), 2);
     }
 }
 
-/// Number of trailing zeroes for 0 <= `digits` <= 99.
-fn TrailingZeros_2Digits(digits: u32) -> u32 {
-    const TrailingZeros100: &[u32; 100] = &[
+/// Number of trailing zeros for 0 <= `digits` <= 99.
+fn trailing_zeros_2digits(digits: u32) -> u32 {
+    const TRAILING_ZEROS100: &[u32; 100] = &[
         2, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -906,7 +903,7 @@ fn TrailingZeros_2Digits(digits: u32) -> u32 {
     ];
 
     debug_assert!(digits <= 99);
-    TrailingZeros100[digits as usize]
+    TRAILING_ZEROS100[digits as usize]
 }
 
 /// Converts the `digits` integer into 8 decimal ASCII digits.
@@ -915,26 +912,26 @@ fn TrailingZeros_2Digits(digits: u32) -> u32 {
 /// * `buf`: destination buffer
 /// * `digits`: integer, 0 <= digits <= 99,999,999
 ///
-/// Returns the number of trailing zeroes.
-fn Utoa_8Digits_skip_trailing_zeros(buf: *mut u8, digits: u32) -> u32 {
+/// Returns the number of trailing zeros.
+fn utoa_8digits_skip_trailing_zeros(buf: *mut u8, digits: u32) -> u32 {
     debug_assert!(1 <= digits && digits <= 99999999);
 
     let q: u32 = digits / 10000;
     let r: u32 = digits % 10000;
-    let qH: u32 = q / 100;
-    let qL: u32 = q % 100;
+    let qh: u32 = q / 100;
+    let ql: u32 = q % 100;
 
-    Utoa_2Digits(buf, 0, qH);
-    Utoa_2Digits(buf, 2, qL);
+    utoa_2digits(buf, 0, qh);
+    utoa_2digits(buf, 2, ql);
 
     if r == 0 {
-        TrailingZeros_2Digits(if qL == 0 { qH } else { qL }) + if qL == 0 { 6 } else { 4 }
+        trailing_zeros_2digits(if ql == 0 { qh } else { ql }) + if ql == 0 { 6 } else { 4 }
     } else {
-        let rH: u32 = r / 100;
-        let rL: u32 = r % 100;
-        Utoa_2Digits(buf, 4, rH);
-        Utoa_2Digits(buf, 6, rL);
-        TrailingZeros_2Digits(if rL == 0 { rH } else { rL }) + if rL == 0 { 2 } else { 0 }
+        let rh: u32 = r / 100;
+        let rl: u32 = r % 100;
+        utoa_2digits(buf, 4, rh);
+        utoa_2digits(buf, 6, rl);
+        trailing_zeros_2digits(if rl == 0 { rh } else { rl }) + if rl == 0 { 2 } else { 0 }
     }
 }
 
@@ -944,8 +941,8 @@ fn Utoa_8Digits_skip_trailing_zeros(buf: *mut u8, digits: u32) -> u32 {
 /// * `buf`: destination buffer
 /// * `output64`: integer, 0 <= digits <= 99,999,999
 ///
-/// Returns the number of trailing zeroes.
-fn PrintDecimalDigitsBackwards(mut buf: *mut u8, mut output64: u64) -> u32 {
+/// Returns the number of trailing zeros.
+fn print_decimal_digits_backwards(mut buf: *mut u8, mut output64: u64) -> u32 {
     let mut tz: u32 = 0; // number of trailing zeros removed.
     let mut nd: u32 = 0; // number of decimal digits processed.
 
@@ -956,7 +953,7 @@ fn PrintDecimalDigitsBackwards(mut buf: *mut u8, mut output64: u64) -> u32 {
         output64 = q;
         unsafe { buf = buf.sub(8); }
         if r != 0 {
-            tz = Utoa_8Digits_skip_trailing_zeros(buf, r);
+            tz = utoa_8digits_skip_trailing_zeros(buf, r);
             debug_assert!(tz <= 7);
         } else {
             tz = 8;
@@ -973,12 +970,12 @@ fn PrintDecimalDigitsBackwards(mut buf: *mut u8, mut output64: u64) -> u32 {
         output = q;
         unsafe { buf = buf.sub(4); }
         if r != 0 {
-            let rH = r / 100;
-            let rL = r % 100;
-            Utoa_2Digits(buf, 0, rH);
-            Utoa_2Digits(buf, 2, rL);
+            let rh = r / 100;
+            let rl = r % 100;
+            utoa_2digits(buf, 0, rh);
+            utoa_2digits(buf, 2, rl);
             if tz == nd {
-                tz += TrailingZeros_2Digits(if rL == 0 { rH } else { rL }) + if rL == 0 { 2 } else { 0 };
+                tz += trailing_zeros_2digits(if rl == 0 { rh } else { rl }) + if rl == 0 { 2 } else { 0 };
             }
         } else {
             if tz == nd {
@@ -996,9 +993,9 @@ fn PrintDecimalDigitsBackwards(mut buf: *mut u8, mut output64: u64) -> u32 {
         let r = output % 100;
         output = q;
         unsafe { buf = buf.sub(2); }
-        Utoa_2Digits(buf, 0, r);
+        utoa_2digits(buf, 0, r);
         if tz == nd {
-            tz += TrailingZeros_2Digits(r);
+            tz += trailing_zeros_2digits(r);
         }
         nd += 2;
         if output >= 100 {
@@ -1006,9 +1003,9 @@ fn PrintDecimalDigitsBackwards(mut buf: *mut u8, mut output64: u64) -> u32 {
             let r2 = output % 100;
             output = q2;
             unsafe { buf = buf.sub(2); }
-            Utoa_2Digits(buf, 0, r2);
+            utoa_2digits(buf, 0, r2);
             if tz == nd {
-                tz += TrailingZeros_2Digits(r2);
+                tz += trailing_zeros_2digits(r2);
             }
             nd += 2;
         }
@@ -1019,9 +1016,9 @@ fn PrintDecimalDigitsBackwards(mut buf: *mut u8, mut output64: u64) -> u32 {
     if output >= 10 {
         let q = output;
         unsafe { buf = buf.sub(2); }
-        Utoa_2Digits(buf, 0, q);
+        utoa_2digits(buf, 0, q);
         if tz == nd {
-            tz += TrailingZeros_2Digits(q);
+            tz += trailing_zeros_2digits(q);
         }
         // nd += 2;
     } else {
@@ -1036,7 +1033,7 @@ fn PrintDecimalDigitsBackwards(mut buf: *mut u8, mut output64: u64) -> u32 {
 }
 
 /// Returns the number of decimal digits required to represent `v`.
-fn DecimalLength(v: u64) -> u32 {
+fn decimal_length(v: u64) -> u32 {
     debug_assert!(1 <= v && v <= 99999999999999999_u64);
     if v <= u32::MAX as u64 {
         let lo = v as u32;
@@ -1090,22 +1087,22 @@ fn DecimalLength(v: u64) -> u32 {
 /// * `force_trailing_dot_zero`: includes the trailing ".0" for integer values
 ///
 /// Returns the first unused `end` position in the buffer, so that length = `end` - `buffer`.
-unsafe fn FormatDigits(mut buffer: *mut u8, digits: u64, decimal_exponent: i32, force_trailing_dot_zero: bool) -> *mut u8 {
-    let MinFixedDecimalPoint: i32 = -6;
-    let MaxFixedDecimalPoint: i32 =  17;
-    debug_assert!(MinFixedDecimalPoint <= -1, "internal error");
-    debug_assert!(MaxFixedDecimalPoint >=  1, "internal error");
-    debug_assert!(MinFixedDecimalPoint >= -30, "internal error");
-    debug_assert!(MaxFixedDecimalPoint <=  32, "internal error");
+unsafe fn format_digits(mut buffer: *mut u8, digits: u64, decimal_exponent: i32, force_trailing_dot_zero: bool) -> *mut u8 {
+    let min_fixed_decimal_point: i32 = -6;
+    let max_fixed_decimal_point: i32 =  17;
+    debug_assert!(min_fixed_decimal_point <= -1, "internal error");
+    debug_assert!(max_fixed_decimal_point >=  1, "internal error");
+    debug_assert!(min_fixed_decimal_point >= -30, "internal error");
+    debug_assert!(max_fixed_decimal_point <=  32, "internal error");
 
     debug_assert!(digits >= 1);
     debug_assert!(digits <= 99_999_999_999_999_999_u64);
     debug_assert!(decimal_exponent >= -999);
     debug_assert!(decimal_exponent <=  999);
 
-    let mut num_digits = DecimalLength(digits);
+    let mut num_digits = decimal_length(digits);
     let decimal_point = num_digits as i32 + decimal_exponent;
-    let use_fixed = MinFixedDecimalPoint <= decimal_point && decimal_point <= MaxFixedDecimalPoint;
+    let use_fixed = min_fixed_decimal_point <= decimal_point && decimal_point <= max_fixed_decimal_point;
 
     // Prepare the buffer.
     // Avoid calling memset/memcpy with variable arguments below...
@@ -1128,7 +1125,7 @@ unsafe fn FormatDigits(mut buffer: *mut u8, digits: u64, decimal_exponent: i32, 
 
     let mut digits_end: *mut u8 = buffer.add(decimal_digits_position + num_digits as usize);
 
-    let tz = PrintDecimalDigitsBackwards(digits_end, digits);
+    let tz = print_decimal_digits_backwards(digits_end, digits);
     digits_end = digits_end.sub(tz as usize);
     num_digits -= tz;
 
@@ -1174,13 +1171,13 @@ unsafe fn FormatDigits(mut buffer: *mut u8, digits: u64, decimal_exponent: i32, 
             *buffer = b'0' + k as u8;
             buffer = buffer.add(1);
         } else if k < 100 {
-            Utoa_2Digits(buffer, 0, k);
+            utoa_2digits(buffer, 0, k);
             buffer = buffer.add(2);
         } else {
             let q = k / 100;
             let r = k % 100;
             *buffer = b'0' + q as u8;
-            Utoa_2Digits(buffer, 1, r);
+            utoa_2digits(buffer, 1, r);
             buffer = buffer.add(3);
         }
     }
@@ -1211,25 +1208,25 @@ const TO_CHARS_MIN_BUFFER_LEN: usize = 64;
 unsafe fn to_chars(mut buffer: *mut u8, value: f64, force_trailing_dot_zero: bool) -> *mut u8 {
     let v = Double::from(value);
 
-    let fraction = v.PhysicalFraction();
-    let exponent = v.PhysicalExponent();
+    let fraction = v.physical_fraction();
+    let exponent = v.physical_exponent();
 
-    if exponent != MaxIeeeExponent {
+    if exponent != MAX_IEEE_EXPONENT {
         // Finite
         *buffer = b'-';
-        buffer = buffer.add(v.SignBit());
+        buffer = buffer.add(v.sign_bit());
         if exponent != 0 || fraction != 0 {
             // != 0
             let dec = FloatingDecimal64::from_ieee754(fraction, exponent);
-            return FormatDigits(buffer, dec.digits, dec.exponent, force_trailing_dot_zero);
+            return format_digits(buffer, dec.digits, dec.exponent, force_trailing_dot_zero);
         } else {
             ptr::copy(b"0.0 " as *const u8, buffer, 4);
             buffer = buffer.add(if force_trailing_dot_zero { 3 } else { 1 });
             return buffer;
         }
-    } else  if fraction == 0 {
+    } else if fraction == 0 {
         *buffer = b'-';
-        buffer = buffer.add(v.SignBit());
+        buffer = buffer.add(v.sign_bit());
         ptr::copy(b"inf " as *const u8, buffer, 4);
         return buffer.add(3);
     } else {
