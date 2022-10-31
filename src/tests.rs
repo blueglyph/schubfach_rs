@@ -86,7 +86,10 @@ fn visual_dtoa() {
 
 #[test]
 fn random_dtoa() {
+    // we cannot simply compare all values to Grisu3/Dragon4 because some roundings will be different,
+    // here we check that the parsed string yields the same original value:
     let mut rng = oorandom::Rand64::new(0);
+    let timer = Instant::now();
     for i in 0..10_000_000 {
         let mut f;
         loop {
@@ -99,13 +102,9 @@ fn random_dtoa() {
         let res = dtoa(f);
         let f2 = f64::from_str(&res).expect(&format!("test #{i}: could not convert {f} -> '{res}' -> f64"));
         assert_eq!(f, f2);
-
-        // we cannot compare all values to Grisu3/Dragon4:
-        //
-        // let exp1 = f.to_string();
-        // let exp2 = format!("{f:e}");
-        // assert!(res == exp1 || res == exp2, "test #{i}: {res} != {exp1} or {exp2}");
     }
+    let elapsed = timer.elapsed();
+    println!("elapsed time: {:.3} s", elapsed.as_secs_f64());
 }
 
 #[test]
