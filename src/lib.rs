@@ -25,6 +25,7 @@ mod tests;
 extern crate core;
 
 use std::{mem, ptr};
+use std::cmp::max;
 
 // ---------------------------------------------------------------------------------------------
 // IEEE-754 double precision:
@@ -983,7 +984,7 @@ fn print_decimal_digits_backwards(mut buf: *mut u8, mut output64: u64) -> u32 {
             if tz == nd {
                 tz += 4;
             } else {
-                unsafe { ptr::write_bytes(buf, b'0', 4); }  // (actually not required...)
+                unsafe { ptr::write_bytes(buf, b'0', 4); }
             }
         }
         nd += 4;
@@ -1107,11 +1108,6 @@ unsafe fn format_digits(mut buffer: *mut u8, fd: &FloatingDecimal64, force_trail
     let mut num_digits = decimal_length(digits);
     let decimal_point = num_digits as i32 + exponent;
     let use_fixed = min_fixed_decimal_point <= decimal_point && decimal_point <= max_fixed_decimal_point;
-
-    // Prepare the buffer.
-    // Avoid calling memset/memcpy with variable arguments below...
-    buffer.write_bytes(b'0', 32);
-
     let decimal_digits_position: usize =
         if use_fixed {
             if decimal_point <= 0 {
@@ -1128,7 +1124,6 @@ unsafe fn format_digits(mut buffer: *mut u8, fd: &FloatingDecimal64, force_trail
         };
 
     let mut digits_end: *mut u8 = buffer.add(decimal_digits_position + num_digits as usize);
-
     let tz = print_decimal_digits_backwards(digits_end, digits);
     digits_end = digits_end.sub(tz as usize);
     num_digits -= tz;
@@ -1136,9 +1131,16 @@ unsafe fn format_digits(mut buffer: *mut u8, fd: &FloatingDecimal64, force_trail
     if use_fixed {
         if decimal_point <= 0 {
             // 0.[000]digits
-            *buffer.add(1) = b'.';
+            ptr::copy(b"0." as *const u8, buffer, 2);
+            if decimal_point < 0 {
+                buffer.add(2).write_bytes(b'0', -decimal_point as usize);
+            }
             buffer = digits_end;
         } else {
+            let fill = max(tz as i32 + exponent, 0) as usize;
+            if fill > 0 {
+                digits_end.write_bytes(b'0', fill);
+            }
             let decimal_ptr = buffer.add(decimal_point as usize);
             if decimal_point < num_digits as i32 {
                 // dig.its

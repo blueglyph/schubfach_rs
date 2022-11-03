@@ -11,6 +11,60 @@ use num::{Float, ToPrimitive, Zero};
 use crate::*;
 
 #[test]
+fn test_zero_fill() {
+    let values = vec![
+        1.0,
+        -1.0,
+        0.1,
+        -0.1,
+        1.0e100,
+        -1.0e-100,
+        1.125,
+        1.0625,
+        1.005,
+        0.02,
+        0.003,
+        0.0004,
+        0.00005,
+        0.000025,
+        0.0000000000000006,
+        1000000020.0,
+        1234567891.0,
+        10.0,
+        200.0,
+        3000.0,
+        40000.0,
+        500000.0,
+        6000000.0,
+        70000000.0,
+        800000000.0,
+        90000000000.0,
+        100000000000.0,
+        2000000000000.0,
+        30000000000000.0,
+        400000000000000.0,
+        5000000000000000.0,
+        60000000000000000.0,
+        700000000000000000.0,
+        8000000000000000000.0,
+        4.9130000005651315e250,
+        60000000000000000.0,
+        -43559580779681430.0,
+    ];
+    for value in values {
+        let res = dtoa(value);
+        let exp = {
+            if res.contains('e') {
+                format!("{value:e}")
+            } else {
+                value.to_string()
+            }
+        };
+        assert_eq!(exp, res);
+    }
+}
+
+#[test]
 fn test_double() {
     // constants for double-precision encoding
     assert_eq!(SIGNIFICAND_SIZE, 53);
@@ -109,7 +163,7 @@ fn random_dtoa() {
 
 #[test]
 fn digits_dtoa() {
-    const MAX_TESTS: u64 = 1_000_000;
+    const MAX_TESTS: u64 = 2_000_000;
     const MAX_VALUE: f64 = ((1_u64 << 54) - 1) as f64;
 
     let mut rng = oorandom::Rand64::new(0);
