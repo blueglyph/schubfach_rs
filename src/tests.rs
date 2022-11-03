@@ -75,10 +75,22 @@ fn test_double() {
     assert_eq!(EXPONENT_MASK, 0x7ff0000000000000);
     assert_eq!(SIGN_MASK, 0x8000000000000000);
 
+    // constants used in FPFormatter
+    assert!(FPFormatter::MIN_FIXED_DECIMAL_POINT <= -1, "internal error");
+    assert!(FPFormatter::MIN_FIXED_DECIMAL_POINT >= -30, "internal error");
+    assert!(FPFormatter::MAX_FIXED_DECIMAL_POINT >= 1, "internal error");
+    assert!(FPFormatter::MAX_FIXED_DECIMAL_POINT <= 32, "internal error");
+
     // base methods
     for f in vec![1.0, -1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 0.0, 1e10, -1.5e-8] {
         let x = Double::from(f);
         let report = format!("test failed for f = {f}");
+        match x.encoding() {
+            Encoding::NaN => assert!(f.is_nan(), "{report}"),
+            Encoding::Inf => assert!(f.is_infinite(), "{report}"),
+            Encoding::Zero => assert!(f.is_zero(), "{report}"),
+            Encoding::Digits => assert!(f.is_finite() && !f.is_zero(), "{report}"),
+        }
         assert_eq!(x.is_nan(), f.is_nan(), "{report}");
         assert_eq!(x.is_inf(), f.is_infinite(), "{report}");
         assert_eq!(x.is_zero(), f.is_zero(), "{report}");
@@ -136,6 +148,22 @@ fn visual_dtoa() {
         }
     }
     assert!(!error);
+}
+
+#[test]
+fn limits_dtoa() {
+    let tests: &[(f64, &str)] = &[
+        // those tests depend on the value of FPFormatter::MIN_FIXED_DECIMAL_POINT
+        (0.0000002, "0.0000002"),
+        (0.00000002, "2e-8"),
+        // those tests depend on the value of FPFormatter::MAX_FIXED_DECIMAL_POINT
+        (12345678901234562.0, "12345678901234562"),
+        (123456789012345620.0, "1.2345678901234562e17"),
+    ];
+    for (idx, (value, exp)) in tests.into_iter().enumerate() {
+        let res = dtoa(*value);
+        assert_eq!(res, *exp, "failed in test #{idx}");
+    }
 }
 
 #[test]
