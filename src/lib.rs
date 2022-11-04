@@ -980,7 +980,7 @@ impl FPFormatter {
 
     /// Number of trailing zeros for `value`, with 0 <= `value` <= 99.
     fn trailing_zeros_2digits(value: u32) -> usize {
-        const TRAILING_ZEROS100: &[usize; 100] = &[
+        const TRAILING_ZEROS100: &[u8; 100] = &[
             2, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -994,7 +994,7 @@ impl FPFormatter {
         ];
 
         debug_assert!(value <= 99);
-        TRAILING_ZEROS100[value as usize]
+        TRAILING_ZEROS100[value as usize] as usize
     }
 
     /// Converts the `value` integer into 8 decimal ASCII digits, skipping all the trailing zeros.
