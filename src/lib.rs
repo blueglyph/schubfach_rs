@@ -929,6 +929,22 @@ impl From<Double> for FloatingDecimal64 {
 
 // ---------------------------------------------------------------------------------------------
 
+/// Formatting options for [FPFormatter] methods
+struct FmtOptions {
+    /// maximum string length
+    width: Option<u32>,
+    /// number of fractional digits
+    precision: Option<u32>,
+    /// true: includes ".0" for integer values, false: only includes the integer part
+    trailing_dot_zero: bool
+}
+
+impl Default for FmtOptions {
+    fn default() -> Self {
+        FmtOptions { width: None, precision: None, trailing_dot_zero: false }
+    }
+}
+
 /// Floating-point formatter
 struct FPFormatter {
     /// buffer holding the floating-point value decimal representation
@@ -1133,7 +1149,7 @@ impl FPFormatter {
     /// * `force_trailing_dot_zero`: includes the trailing ".0" for integer values
     ///
     /// Returns the first unused `end` position in the buffer, so that length = `end` - `buffer`.
-    unsafe fn format_digits(&mut self, value: &FloatingDecimal64, force_trailing_dot_zero: bool) -> *mut u8 {
+    unsafe fn format_digits(&mut self, value: &FloatingDecimal64, options: &FmtOptions) -> *mut u8 {
         let digits = value.digits;
         let exponent = value.exponent;
         debug_assert!(digits >= 1);
@@ -1188,7 +1204,7 @@ impl FPFormatter {
                 } else {
                     // digits[000]
                     self.ptr = decimal_ptr;
-                    if force_trailing_dot_zero {
+                    if options.trailing_dot_zero {
                         ptr::copy(b".0" as *const u8, self.ptr, 2);
                         self.ptr = self.ptr.add(2);
                     }
@@ -1251,7 +1267,7 @@ impl FPFormatter {
     ///
     /// Note:
     /// This function may temporarily write up to TO_CHARS_MIN_BUFFER_LEN characters into the buffer.
-    pub fn to_fix(mut self, value: f64, force_trailing_dot_zero: bool) -> String {
+    pub fn to_fix(mut self, value: f64, options: &FmtOptions) -> String {
         let v = Double::from(value);
         unsafe {
             self.ptr = self.buffer;
@@ -1267,12 +1283,12 @@ impl FPFormatter {
                 }
                 Encoding::Zero => {
                     ptr::copy(b"0.0 " as *const u8, self.ptr, 4);
-                    self.ptr = self.ptr.add(if force_trailing_dot_zero { 3 } else { 1 });
+                    self.ptr = self.ptr.add(if options.trailing_dot_zero { 3 } else { 1 });
                     self.ptr
                 }
                 Encoding::Digits => {
                     let dec = FloatingDecimal64::from(v);
-                    self.format_digits(&dec, force_trailing_dot_zero)
+                    self.format_digits(&dec, options)
                 }
             };
             String::from_raw_parts(self.buffer, endptr.offset_from(self.buffer) as usize, Self::BUFFER_LEN)
@@ -1302,5 +1318,5 @@ impl FPFormatter {
 ///  3. is as close to the input number as possible.
 pub fn dtoa(value: f64) -> String {
     let fmt = FPFormatter::new();
-    fmt.to_fix(value, false)
+    fmt.to_fix(value, &FmtOptions::default())
 }
