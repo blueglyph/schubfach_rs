@@ -26,6 +26,7 @@ mod maths;
 extern crate core;
 
 use std::{mem, ptr};
+use std::cmp::{max, min};
 use crate::maths::*;
 
 // ---------------------------------------------------------------------------------------------
@@ -50,6 +51,7 @@ const FRACTION_MASK: BitsType = HIDDEN_BIT - 1;
 const EXPONENT_MASK: BitsType = MAX_IEEE_EXPONENT << (SIGNIFICAND_SIZE - 1);
 const SIGN_MASK: BitsType = (1 as BitsType) << 63;
 
+#[derive(PartialEq)]
 enum Encoding {
     NaN,    // not a number
     Inf,    // +infinity or -infinity number
@@ -427,8 +429,7 @@ impl FPFormatter {
     /// * `decimal_exponent`: base 10 exponent
     /// * `force_trailing_dot_zero`: includes the trailing ".0" for integer values
     ///
-    /// Returns the first unused `end` pointer position in the buffer. The length of the string is
-    /// `end` - `buffer`.
+    /// Returns the length of the string written into the buffer.
     unsafe fn format_digits(&mut self, value: &FloatingDecimal64, options: &FmtOptions) -> usize {
         let digits = value.digits;
         let exponent = value.exponent;
@@ -439,21 +440,25 @@ impl FPFormatter {
 
         self.write_sign(value.sign);
 
+        // width and precision, subtract 1 from width if option given and sign consumed
+        let width = options.width.and_then(|width| Some(width - value.sign as u32));
+        let mut precision = options.precision;
+
+        // extracts the raw digits
         let mut num_digits = decimal_length(digits);
         let decimal_point = num_digits as i32 + exponent;
-        let use_fixed = Self::MIN_FIXED_DECIMAL_POINT <= decimal_point && decimal_point <= Self::MAX_FIXED_DECIMAL_POINT;
+        let mut use_fixed = Self::MIN_FIXED_DECIMAL_POINT <= decimal_point && decimal_point <= Self::MAX_FIXED_DECIMAL_POINT;
         let decimal_digits_position: usize =
             if use_fixed {
                 if decimal_point <= 0 {
-                    // 0.[000]digits
+                    // 0.d-d or 0.(0-0)d-d
                     (2 - decimal_point) as usize
                 } else {
-                    // dig.its
-                    // digits[000]
+                    // d-d.d-d or d-d(0-0)[.0]
                     0
                 }
             } else {
-                // dE+123 or d.igitsE+123
+                // dE[-]eee or d.d-dE[-]eee
                 1
             };
 
@@ -461,7 +466,73 @@ impl FPFormatter {
         let tz = self.write_decimal_digits_backwards(offset, digits);
         let ptr_end = self.ptr.add(offset - tz);
         num_digits -= tz;
+        //    | num_digits    = # digits in buffer (not counting the possible '-' sign)
+        // -> | tz            = # trailing zeros not written in the buffer
+        //    | decimal_point = # digits to skip before inserting '.'
 
+        // check width and precision
+        if let Some(w) = width {
+            match () {
+                _ if exponent >= 0 => {
+                    // d-d[.0] or d-d(0-0)[.0]
+                    if num_digits + tz > w as usize {
+                        use_fixed = false;
+                    }
+                }
+                _ if 0 < decimal_point && decimal_point < num_digits as i32 => {
+                    // d-d.d-d(0-0)
+                    // complicated case since rounding could generate an extra int digit -> Ed-d.d-d
+                    // (for ex. 9.99, precision = 1 -> 10.0)
+                    let decimal_point = decimal_point as u32;
+                    let mut extra = 0;
+                    let mut leading9 = 0;
+                    if let Some(p) = precision {
+                        if p <= num_digits as u32 - decimal_point - 1 {
+                            // rounding tie to even, so if the digit right before the rounding is > '5' or a tie,
+                            // and if all other digits are '9', an extra digit will appear
+                            let offset = (decimal_point + p) as usize;
+                            let previous_digit = *self.ptr.add(offset);
+                            leading9 = (0..offset).take_while(|ofs| *self.ptr.add(*ofs) == b'9').count();
+                            if previous_digit >= b'5' && leading9 >= offset {
+                                extra = 1;
+                            };
+                        }
+                    }
+                    if decimal_point + extra > w {
+                        // does not fit, even without decimals
+                        use_fixed = false;
+                    } else {
+                        // reduces precision if necessary
+                        if let Some(p) = precision {
+                            let pmax = w - decimal_point - extra - 1;
+                            if pmax < p {
+                                precision = Some(pmax);
+                                // we may have to re-evaluate extra and prec once more if prec had to be adjusted,
+                                // because another digit is now involved for the rounding
+                                let offset = (decimal_point + pmax) as usize;
+                                let previous_digit = *self.ptr.add(offset);
+                                if previous_digit >= b'5' && leading9 >= offset {
+                                    extra = 1;
+                                    if decimal_point + extra > w {
+                                        use_fixed = false;
+                                    }
+                                };
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    // 0.d-d or 0.(0-0)d-d
+                    debug_assert!(exponent < 0);
+                    if let Some(p) = precision {
+                        precision = Some(min(p, w - 2))
+                    }
+                }
+            }
+        }
+        println!("[v={v},width={},prec={}]",
+                 if width.is_some() { width.unwrap().to_string() } else { "-".to_string() },
+                 if precision.is_some() { precision.unwrap().to_string() } else { "-".to_string() });
         if use_fixed {
             if decimal_point <= 0 {
                 // 0.[000]digits
@@ -567,10 +638,130 @@ impl FPFormatter {
                 }
                 Encoding::Digits => {
                     let dec = FloatingDecimal64::from(v);
-                    self.format_digits(&dec, options)
+                    self.format_digits(&dec, options, value)
                 }
             };
             String::from_raw_parts(self.buffer, length, Self::BUFFER_LEN)
+        }
+    }
+
+
+    pub fn check_width(&mut self, x:f64, options: &FmtOptions) -> (bool, u32) {
+        let v = Double::from(x);
+        self.ptr = self.buffer;
+        if v.encoding() != Encoding::Digits {
+            panic!("not a Digits value")
+        }
+        let dec = FloatingDecimal64::from(v);
+        let value: &FloatingDecimal64 = &dec;
+
+        unsafe {
+            let digits = value.digits;
+            let exponent = value.exponent;
+            debug_assert!(digits >= 1);
+            debug_assert!(digits <= 99_999_999_999_999_999_u64);
+            debug_assert!(exponent >= -999);
+            debug_assert!(exponent <= 999);
+
+            self.write_sign(value.sign);
+
+            // width and precision, subtract 1 from width if option given and sign consumed
+            let width = options.width.and_then(|width| Some(width - value.sign as u32));
+            let mut precision = options.precision;
+
+            // extracts the raw digits
+            let mut num_digits = decimal_length(digits);
+            let decimal_point = num_digits as i32 + exponent;
+            let mut use_fixed = Self::MIN_FIXED_DECIMAL_POINT <= decimal_point && decimal_point <= Self::MAX_FIXED_DECIMAL_POINT;
+            let decimal_digits_position: usize =
+                if use_fixed {
+                    if decimal_point <= 0 {
+                        // 0.d-d or 0.(0-0)d-d
+                        (2 - decimal_point) as usize
+                    } else {
+                        // d-d.d-d or d-d(0-0)[.0]
+                        0
+                    }
+                } else {
+                    // dE[-]eee or d.d-dE[-]eee
+                    1
+                };
+
+            let offset = decimal_digits_position + num_digits;
+            let tz = self.write_decimal_digits_backwards(offset, digits);
+            // let ptr_end = self.ptr.add(offset - tz);
+            num_digits -= tz;
+            //    | num_digits    = # digits in buffer (not counting the possible '-' sign)
+            // -> | tz            = # trailing zeros not written in the buffer
+            //    | decimal_point = # digits to skip before inserting '.'
+
+            // check width and precision
+            if let Some(w) = width {
+                match () {
+                    _ if exponent >= 0 => {
+                        // d-d[.0] or d-d(0-0)[.0]
+                        if num_digits + tz > w as usize {
+                            use_fixed = false;
+                        }
+                    }
+                    _ if 0 < decimal_point && decimal_point < num_digits as i32 => {
+                        // d-d.d-d(0-0)
+                        // complicated case since rounding could generate an extra int digit -> Ed-d.d-d
+                        // (for ex. 9.99, precision = 1 -> 10.0)
+                        let decimal_point = decimal_point as u32;
+                        let mut extra = 0;
+                        let mut leading9 = 0;
+                        if let Some(p) = precision {
+                            if p <= num_digits as u32 - decimal_point - 1 {
+                                // rounding tie to even, so if the digit right before the rounding is > '5' or a tie,
+                                // and if all other digits are '9', an extra digit will appear
+                                let offset = (decimal_point + p) as usize;
+                                let previous_digit = *self.ptr.add(offset);
+                                leading9 = (0..offset).take_while(|ofs| *self.ptr.add(*ofs) == b'9').count();
+                                if previous_digit >= b'5' && leading9 >= offset {
+                                    extra = 1;
+                                };
+                            }
+                        }
+                        if decimal_point + extra > w {
+                            // does not fit, even without decimals
+                            use_fixed = false;
+                        } else {
+                            // reduces precision if necessary
+                            if let Some(p) = precision {
+                                let pmax = max(0, w as i32 - (decimal_point + extra + 1) as i32) as u32;
+                                if pmax < p {
+                                    precision = Some(pmax);
+                                    // we may have to re-evaluate extra and prec once more if prec had to be adjusted,
+                                    // because another digit is now involved for the rounding
+                                    let offset = (decimal_point + pmax) as usize;
+                                    let previous_digit = *self.ptr.add(offset);
+                                    if previous_digit >= b'5' && leading9 >= offset {
+                                        extra = 1;
+                                        if decimal_point + extra > w {
+                                            use_fixed = false;
+                                        }
+                                    };
+                                }
+                            }
+                        }
+                    }
+                    _ => {
+                        // 0.d-d or 0.(0-0)d-d
+                        debug_assert!(exponent < 0);
+                        if let Some(p) = precision {
+                            let pmax = max(0, w as i32 - 2);
+                            if pmax > -decimal_point {
+                                precision = Some(min(p, w - 2))
+                            } else {
+                                // 0.000526 w=5 => pmax=3, -decimal_point=3, no digit to show!
+                                use_fixed = false;
+                            }
+                        }
+                    }
+                }
+            }
+            return (use_fixed, precision.unwrap())
         }
     }
 }
@@ -596,6 +787,16 @@ impl FPFormatter {
 ///  2. is as short as possible,
 ///  3. is as close to the input number as possible.
 pub fn dtoa(value: f64) -> String {
+    dtoa_width(value, None, None)
+}
+
+pub fn dtoa_width(value: f64, width: Option<u32>, precision: Option<u32>) -> String {
     let mut fmt = FPFormatter::new();
-    fmt.to_fix(value, &FmtOptions::default())
+    fmt.to_fix(value, &FmtOptions { width, precision, ..FmtOptions::default() })
+}
+
+
+pub fn check_width(value: f64, width: Option<u32>, precision: Option<u32>) -> (bool, u32) {
+    let mut fmt = FPFormatter::new();
+    fmt.check_width(value, &FmtOptions { width, precision, ..FmtOptions::default() })
 }
