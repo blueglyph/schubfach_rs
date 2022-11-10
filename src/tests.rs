@@ -249,31 +249,35 @@ fn visual_dtoa_width() {
 #[test]
 fn test_width() {
     let values = vec![
-        (0.000526,  Some(5),    Some(5),   false, 1,  "5.2e-4"),  // "0.0005".len > 6 => sci, with one more digit
-        /*
-        (1.0,       Some(10),   Some(4),   true,  4,  "1.0000"),  // d-d
-        (1.5,       Some(10),   Some(4),   true,  4,  "1.5000"),  // d-d.d-d
-        (100.0,     Some(10),   Some(2),   true,  2,  "100.00"),  // d-d(0-0)
-        (30.125,    Some(10),   Some(4),   true,  4,  "30.1250"), // d-d.d-d(0-0)
-        (0.5,       Some(10),   Some(2),   true,  2,  "0.50"),    // 0.d-d(0-0)
-        (0.05,      Some(10),   Some(4),   true,  4,  "0.0500"),  // 0.(0-0)d-d
-        (10.125,    Some(10),   Some(2),   true,  2,  "10.12"),   // rounding
-        (20.375,    Some(10),   Some(2),   true,  2,  "20.38"),   // rounding
-        */
-        (99.9535,   Some(5),    Some(3),   true,  2,  "99.96"),   // len > 5 => precision -> 2
-        (99.9953,   Some(5),    Some(3),   true,  1,  "100.0"),   // rounding => prec -> 2 => one more digit => prec -> 1
-        (99.9996,   Some(6),    Some(2),   true,  2,  "100.00"),  // rounding -> one more digit
-        (99.9996,   Some(5),    Some(2),   true,  1,  "100.0"),   // len > 5 => precision -> 1
-        (999.9,     Some(3),    Some(0),   false, 0,  "1e3"),     // "1000".len > 3 => sci
-        (999.9,     Some(4),    Some(1),   true,  0,  "1000"),    // precision -> 0, one more digit because prec had to be adjusted
-        (0.000526,  Some(5),    Some(5),   false, 1,  "5.2e-4"),  // "0.0005".len > 6 => sci, with one more digit
+        //(9.999e-10,    Some(9),  Some(4),   false, 4, 2, "1.0000e-9"),
+        (9.999e-10,    Some(8),  Some(4),   false, 3, 2, "1.000e-9"),
+        (9.999e-10,    Some(9),  Some(4),   false, 3, 3, "9.999e-10"),
+
+        (99.9535,      Some(5),  Some(3),   true,  2, 0, "99.96"),   // len > 5 => precision -> 2
+        (99.9953,      Some(5),  Some(3),   true,  1, 0, "100.0"),   // rounding => prec -> 2 => one more digit => prec -> 1
+        (99.9996,      Some(6),  Some(2),   true,  2, 0, "100.00"),  // rounding -> one more digit
+        (99.9996,      Some(5),  Some(2),   true,  1, 0, "100.0"),   // len > 5 => precision -> 1
+        (999.9,        Some(3),  Some(0),   false, 0, 1, "1e3"),     // "1000".len > 3 => sci
+        (999.9,        Some(4),  Some(1),   true,  0, 0, "1000"),    // precision -> 0, one more digit because prec had to be adjusted
+        (0.000526,     Some(5),  Some(5),   false, 1, 2, "5.2e-4"),  // "0.0005".len > 6 => sci, with one more digit
+        (1.0,          Some(10), Some(4),   true,  4, 0, "1.0000"),  // d-d
+        (1.5,          Some(10), Some(4),   true,  4, 0, "1.5000"),  // d-d.d-d
+        (100.0,        Some(10), Some(2),   true,  2, 0, "100.00"),  // d-d(0-0)
+        (30.125,       Some(10), Some(4),   true,  4, 0, "30.1250"), // d-d.d-d(0-0)
+        (0.5,          Some(10), Some(2),   true,  2, 0, "0.50"),    // 0.d-d(0-0)
+        (0.05,         Some(10), Some(4),   true,  4, 0, "0.0500"),  // 0.(0-0)d-d
+        (10.125,       Some(10), Some(2),   true,  2, 0, "10.12"),   // rounding
+        (20.375,       Some(10), Some(2),   true,  2, 0, "20.38"),   // rounding
+
+        (9999999999.0, Some(6),  Some(2),   false, 1, 2, "1.0e10"),
+        (9.99999e-10,  Some(9),  Some(4),   false, 4, 2, "1.0000e-9"),
     ];
     let mut error = false;
-    for (idx, (value, width, precision, exp_fixed, exp_prec, _)) in values.into_iter().enumerate() {
-        let (fixed, prec) = check_width(value, width, precision);
-        if exp_fixed != fixed || (fixed && exp_prec != prec) {
+    for (idx, (value, width, precision, exp_fixed, exp_prec, exp_num_exp_digits, _)) in values.into_iter().enumerate() {
+        let (fixed, prec, num_exp_digits) = check_width(value, width, precision);
+        if exp_fixed != fixed || (fixed && exp_prec != prec) || (!fixed && num_exp_digits != exp_num_exp_digits) {
             error = true;
-            println!("test #{idx}: expecting {exp_fixed}, {exp_prec}, but got {fixed}, {prec}");
+            println!("test #{idx}: expecting {exp_fixed}, {exp_prec}, {exp_num_exp_digits} but got {fixed}, {prec}, {num_exp_digits}");
         } else {
             println!("test #{idx} OK");
         }
