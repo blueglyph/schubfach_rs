@@ -427,8 +427,9 @@ impl FPFormatter {
     /// * `decimal_exponent`: base 10 exponent
     /// * `force_trailing_dot_zero`: includes the trailing ".0" for integer values
     ///
-    /// Returns the first unused `end` position in the buffer, so that length = `end` - `buffer`.
-    unsafe fn format_digits(&mut self, value: &FloatingDecimal64, options: &FmtOptions) -> *mut u8 {
+    /// Returns the first unused `end` pointer position in the buffer. The length of the string is
+    /// `end` - `buffer`.
+    unsafe fn format_digits(&mut self, value: &FloatingDecimal64, options: &FmtOptions) -> usize {
         let digits = value.digits;
         let exponent = value.exponent;
         debug_assert!(digits >= 1);
@@ -524,7 +525,7 @@ impl FPFormatter {
                 self.ptr = self.ptr.add(3);
             }
         }
-        self.ptr
+        self.ptr.offset_from(self.buffer) as usize
     }
 
     unsafe fn write_sign(&mut self, sign: usize) {
@@ -546,31 +547,30 @@ impl FPFormatter {
     ///
     /// Note:
     /// This function may temporarily write up to TO_CHARS_MIN_BUFFER_LEN characters into the buffer.
-    pub fn to_fix(mut self, value: f64, options: &FmtOptions) -> String {
+    pub fn to_fix(&mut self, value: f64, options: &FmtOptions) -> String {
         let v = Double::from(value);
         unsafe {
             self.ptr = self.buffer;
-            let endptr = match v.encoding() {
+            let length = match v.encoding() {
                 Encoding::NaN => {
                     ptr::copy(b"NaN " as *const u8, self.ptr, 4);
-                    self.ptr.add(3)
+                    3
                 }
                 Encoding::Inf => {
                     self.write_sign(v.sign_bit());
                     ptr::copy(b"inf " as *const u8, self.ptr, 4);
-                    self.ptr.add(3)
+                    3 + v.sign_bit()
                 }
                 Encoding::Zero => {
                     ptr::copy(b"0.0 " as *const u8, self.ptr, 4);
-                    self.ptr = self.ptr.add(if options.trailing_dot_zero { 3 } else { 1 });
-                    self.ptr
+                    if options.trailing_dot_zero { 3 } else { 1 }
                 }
                 Encoding::Digits => {
                     let dec = FloatingDecimal64::from(v);
                     self.format_digits(&dec, options)
                 }
             };
-            String::from_raw_parts(self.buffer, endptr.offset_from(self.buffer) as usize, Self::BUFFER_LEN)
+            String::from_raw_parts(self.buffer, length, Self::BUFFER_LEN)
         }
     }
 }
@@ -596,6 +596,6 @@ impl FPFormatter {
 ///  2. is as short as possible,
 ///  3. is as close to the input number as possible.
 pub fn dtoa(value: f64) -> String {
-    let fmt = FPFormatter::new();
+    let mut fmt = FPFormatter::new();
     fmt.to_fix(value, &FmtOptions::default())
 }
