@@ -46,19 +46,8 @@ use crate::maths::*;
 
 type BitsType = u64;
 
-const MAX_DIGITS_10: i32 = 53;
-const MAX_EXPONENT: i32 = 1024;
-
-const SIGNIFICAND_SIZE: i32 = MAX_DIGITS_10;
-const EXPONENT_BIAS: i32 = MAX_EXPONENT - 1 + (SIGNIFICAND_SIZE - 1);
-const MAX_IEEE_EXPONENT: BitsType = (2 * MAX_EXPONENT - 1) as BitsType;
-const HIDDEN_BIT: BitsType = (1 as BitsType) << (SIGNIFICAND_SIZE - 1);
-const FRACTION_MASK: BitsType = HIDDEN_BIT - 1;
-const EXPONENT_MASK: BitsType = MAX_IEEE_EXPONENT << (SIGNIFICAND_SIZE - 1);
-const SIGN_MASK: BitsType = (1 as BitsType) << 63;
-
 #[derive(PartialEq)]
-enum Encoding {
+pub enum Encoding {
     NaN,    // not a number
     Inf,    // +infinity or -infinity number
     Zero,   // zero finite number
@@ -67,99 +56,134 @@ enum Encoding {
 
 #[derive(Debug)]
 /// IEEE-754 double-precision floating-point value
-struct Double {
-    bits: BitsType
+pub struct Decoded<T> {
+    bits: T
 }
 
-impl Double {
-    /// Creates a new [Double] value from the IEEE-754 binary encoding
-    fn new(bits: BitsType) -> Self {
-        Double { bits }
+impl<T> Decoded<T> {
+    /// Creates a new [Decoded] value from the IEEE-754 binary encoding
+    pub fn new(bits: T) -> Self {
+        Decoded { bits }
     }
+}
+
+pub trait FPDecoded {
+    type Item;
+
+    const MAX_DIGITS_10: i32 = 53;
+    const MAX_EXPONENT: i32 = 1024;
+    const SIGNIFICAND_SIZE: i32 = Self::MAX_DIGITS_10;
+    const EXPONENT_BIAS: i32 = Self::MAX_EXPONENT - 1 + (Self::SIGNIFICAND_SIZE - 1);
+    const MAX_IEEE_EXPONENT: Self::Item;
+    const HIDDEN_BIT: Self::Item;
+    const FRACTION_MASK: Self::Item;
+    const EXPONENT_MASK: Self::Item;
+    const SIGN_MASK: Self::Item;
+    /// Fraction component (significand without its hidden MSB)
+    fn physical_fraction(&self) -> Self::Item;
+    /// Exponent component
+    fn physical_exponent(&self) -> Self::Item;
+    /// Encoding class (zero, finite, inf or nan)
+    fn encoding(&self) -> Encoding;
+    /// Whether the value is finite in the form `-1 ^ sign * (1.fraction) * 2 ^ (e - 1023)`
+    fn is_finite(&self) -> bool;
+    /// Whether the value is positive / negative infinity
+    fn is_inf(&self) -> bool;
+    /// Whether the value is not a number (neither finite or infinite)
+    fn is_nan(&self) -> bool;
+    /// Whether the value is null
+    fn is_zero(&self) -> bool;
+    /// Sign: 0 = positive, 1 = negative
+    fn sign_bit(&self) -> usize;
+}
+
+impl FPDecoded for Decoded<BitsType> {
+    type Item = BitsType;
+
+    const MAX_IEEE_EXPONENT: Self::Item = (2 * Self::MAX_EXPONENT - 1) as Self::Item;
+    const HIDDEN_BIT: Self::Item = (1 as Self::Item) << (Self::SIGNIFICAND_SIZE - 1);
+    const FRACTION_MASK: Self::Item = Self::HIDDEN_BIT - 1;
+    const EXPONENT_MASK: Self::Item = Self::MAX_IEEE_EXPONENT << (Self::SIGNIFICAND_SIZE - 1);
+    const SIGN_MASK: Self::Item = (1 as Self::Item) << 63;
 
     /// Fraction component (significand without its hidden MSB)
-    fn physical_fraction(&self) -> BitsType {
-        self.bits & FRACTION_MASK
+    fn physical_fraction(&self) -> Self::Item {
+        self.bits & Self::FRACTION_MASK
     }
 
     /// Exponent component
-    fn physical_exponent(&self) -> BitsType {
-        (self.bits & EXPONENT_MASK) >> (SIGNIFICAND_SIZE - 1)
+    fn physical_exponent(&self) -> Self::Item {
+        (self.bits & Self::EXPONENT_MASK) >> (Self::SIGNIFICAND_SIZE - 1)
     }
 
     /// Encoding class (zero, finite, inf or nan)
     fn encoding(&self) -> Encoding {
-        if self.bits & !SIGN_MASK == 0 {
+        if self.bits & !Self::SIGN_MASK == 0 {
             Encoding::Zero
-        } else if self.bits & EXPONENT_MASK != EXPONENT_MASK {
+        } else if self.bits & Self::EXPONENT_MASK != Self::EXPONENT_MASK {
             Encoding::Digits
-        } else if self.bits & FRACTION_MASK == 0 {
+        } else if self.bits & Self::FRACTION_MASK == 0 {
             Encoding::Inf
         } else {
             Encoding::NaN
         }
     }
 
-    /// Whether the value is finite in the form `-1 ^ sign * (1.fraction) * 2 ^ (e - 1023)`
     fn is_finite(&self) -> bool {
-        self.bits & EXPONENT_MASK != EXPONENT_MASK
+        self.bits & Self::EXPONENT_MASK != Self::EXPONENT_MASK
     }
 
-    /// Whether the value is positive / negative infinity
     fn is_inf(&self) -> bool {
-        self.bits & EXPONENT_MASK == EXPONENT_MASK && self.bits & FRACTION_MASK == 0
+        self.bits & Self::EXPONENT_MASK == Self::EXPONENT_MASK && self.bits & Self::FRACTION_MASK == 0
     }
 
-    /// Whether the value is not a number (neither finite or infinite)
     fn is_nan(&self) -> bool {
-        self.bits & EXPONENT_MASK == EXPONENT_MASK && self.bits  & FRACTION_MASK != 0
+        self.bits & Self::EXPONENT_MASK == Self::EXPONENT_MASK && self.bits  & Self::FRACTION_MASK != 0
     }
 
-    /// Whether the value is null
     fn is_zero(&self) -> bool {
-        self.bits & !SIGN_MASK == 0
+        self.bits & !Self::SIGN_MASK == 0
     }
 
-    /// Sign: 0 = positive, 1 = negative
     fn sign_bit(&self) -> usize {
-        usize::from(self.bits & SIGN_MASK != 0)
+        usize::from(self.bits & Self::SIGN_MASK != 0)
     }
 }
 
-impl From<f64> for Double {
+impl From<f64> for Decoded<BitsType> {
     fn from(f: f64) -> Self {
         let bits = f.to_bits();
-        Double::new(bits)
+        Decoded::new(bits)
     }
 }
 
 // ---------------------------------------------------------------------------------------------
 
 /// Decimal exponent representation `digits` * 10^`exponent`
-struct FloatingDecimal64 {
-    digits: u64,    // num_digits <= 17
+struct FloatingDecimal<T> {
+    digits: T,    // num_digits <= 17
     exponent: i32,
     /// 1 = negative, 0 = positive
     sign: usize
 }
 
-impl From<Double> for FloatingDecimal64 {
+impl From<Decoded<u64>> for FloatingDecimal<u64> {
     /// Builds the decimal representation from extracted IEEE-754 fraction and exponent
-    fn from(double: Double) -> Self {
+    fn from(double: Decoded<u64>) -> Self {
         let ieee_fraction = double.physical_fraction();
         let ieee_exponent = double.physical_exponent();
         let sign = double.sign_bit();
         let c: u64;
         let q: i32;
         if ieee_exponent != 0 {
-            c = HIDDEN_BIT | ieee_fraction;
-            q = ieee_exponent as i32 - EXPONENT_BIAS;
-            if 0 <= -q && -q < SIGNIFICAND_SIZE && multiple_of_pow2(c, -q) {
-                return FloatingDecimal64 { digits: c >> -q, exponent: 0, sign };
+            c = Decoded::<u64>::HIDDEN_BIT | ieee_fraction;
+            q = ieee_exponent as i32 - Decoded::<u64>::EXPONENT_BIAS;
+            if 0 <= -q && -q < Decoded::<u64>::SIGNIFICAND_SIZE && multiple_of_pow2(c, -q) {
+                return FloatingDecimal { digits: c >> -q, exponent: 0, sign };
             }
         } else {
             c = ieee_fraction;
-            q = 1 - EXPONENT_BIAS;
+            q = 1 - Decoded::<u64>::EXPONENT_BIAS;
         }
 
         let is_even: bool = c % 2 == 0;
@@ -197,21 +221,21 @@ impl From<Double> for FloatingDecimal64 {
             let up_inside: bool = lower <= 40 * sp;
             let wp_inside: bool =          40 * sp + 40 <= upper;
             if up_inside != wp_inside {
-                return FloatingDecimal64 { digits: sp + u64::from(wp_inside), exponent: k + 1, sign };
+                return FloatingDecimal { digits: sp + u64::from(wp_inside), exponent: k + 1, sign };
             }
         }
 
         let u_inside: bool = lower <= 4 * s;
         let w_inside: bool =          4 * s + 4 <= upper;
         if u_inside != w_inside {
-            return FloatingDecimal64 { digits: s + u64::from(w_inside), exponent: k, sign };
+            return FloatingDecimal { digits: s + u64::from(w_inside), exponent: k, sign };
         }
 
         // NB: s & 1 == vb & 0x4
         let mid: u64 = 4 * s + 2; // = 2(s + t)
         let round_up: bool = vb > mid || (vb == mid && (s & 1) != 0);
 
-        FloatingDecimal64 { digits: s + u64::from(round_up), exponent: k, sign }
+        FloatingDecimal { digits: s + u64::from(round_up), exponent: k, sign }
     }
 }
 
@@ -224,7 +248,7 @@ pub enum FmtMode {
     Simple
 }
 
-/// Formatting options for [FPFormatter] methods
+/// Formatting options for [NumFmtBuffer] methods
 pub struct FmtOptions {
     /// maximum string length
     pub width: Option<u32>,
@@ -251,15 +275,16 @@ impl Default for FmtOptions {
 }
 
 /// Floating-point formatter
-struct FPFormatter {
+struct NumFmtBuffer {
     /// buffer holding the floating-point value decimal representation
     buffer: *mut u8,
     /// current pointer into the buffer
     pub ptr: *mut u8,
-    size: usize
+    size: usize,
+    options: FmtOptions
 }
 
-impl FPFormatter {
+impl NumFmtBuffer {
     const BUFFER_LEN: usize = 64;
     const MIN_FIXED_DECIMAL_POINT: i32 = -6; // 0.000000[digits] -> fixed, more zeros -> scientific
     const MAX_FIXED_DECIMAL_POINT: i32 = 17; // [17 digits].0    -> fixed, more digits -> scientific
@@ -271,7 +296,7 @@ impl FPFormatter {
         if cfg!(test) {
             unsafe { buffer.write_bytes(b'#', size); }
         }
-        FPFormatter { buffer, ptr: buffer, size }
+        NumFmtBuffer { buffer, ptr: buffer, size, options: FmtOptions::default() }
     }
 
     // -----------------------------------------------------------------------------------------
@@ -456,6 +481,67 @@ impl FPFormatter {
         self.ptr = self.ptr.add(sign);
     }
 
+    /// Rounds the digits in the buffer that start at position `start_ptr`. The digit that
+    /// follows the last precision digit to keep is pointed by `removed_digit_ptr`. If this
+    /// digit is the last one, `potential_tie` is true.
+    /// In case the rounding generates a new digit because of carry (9.99|9 -> 10.00),
+    /// - if `can_eat_left=true`, the character at `start_ptr.sub(1)` can be used
+    /// - if `can_eat_left=false`, the digits must be moved to the right
+    ///
+    /// The method is rounding to tie even.
+    ///
+    /// Returns a tuple of booleans (`left`, `right`) where
+    /// * `left || right` = true if the rounding generated one extra digit because of a carry
+    /// * `left` = true if the extra digit ate up one digit to the left
+    /// * `right` = true if the extra digit made the buffer shift one position to the right
+    /// * `left` and `right` are mutually exclusive.
+    unsafe fn round(start_ptr: *mut u8, removed_digit_ptr: *mut u8, potential_tie: bool, can_eat_left: bool) -> (bool, bool) {
+        debug_assert!(start_ptr <= removed_digit_ptr);
+        let digits = removed_digit_ptr.offset_from(start_ptr) as usize;
+        let mut tie = potential_tie && *removed_digit_ptr == b'5';
+        let mut carry = *removed_digit_ptr >= b'5';
+        let mut ptr = removed_digit_ptr;
+        while carry && start_ptr < ptr {
+            ptr = ptr.sub(1);
+            if !tie || (tie && *ptr & 1 != 0) {
+                // rounds up
+                if *ptr == b'9' {
+                    *ptr = b'0';
+                } else {
+                    *ptr += 1;
+                    carry = false;
+                }
+            } else {
+                // rounds down
+                carry = false;
+            }
+            tie = false;
+        }
+        if carry || digits == 0 {
+            // one more digit to place on the left, either because of a carry or because we
+            // removed the last digit.
+            let new_digit = if tie || !carry { b'0' } else { b'1' };
+            if can_eat_left {
+                *ptr.sub(1) = new_digit;
+                (true, false)
+            } else {
+                ptr::copy(ptr, ptr.add(1), digits);
+                *ptr = new_digit;
+                (false, true)
+            }
+        } else {
+            (false, false)
+        }
+    }
+}
+
+trait NumFormat<F, U> {
+    unsafe fn simple_format(&mut self, value: &FloatingDecimal<U>, options: &FmtOptions) -> usize;
+    fn format(&mut self, value: &FloatingDecimal<U>, options: &FmtOptions) -> usize;
+    fn to_str(self, value: F, options: &FmtOptions) -> String;
+}
+
+impl NumFormat<f64, u64> for NumFmtBuffer {
     /// Converts the finite double-precision number into decimal form and stores the result into
     /// `self.buffer`.
     ///
@@ -464,7 +550,7 @@ impl FPFormatter {
     /// * `options`, only uses `force_trailing_dot_zero`: includes the trailing ".0" for integer values
     ///
     /// Returns the length of the string written into the buffer.
-    unsafe fn simple_format(&mut self, value: &FloatingDecimal64, options: &FmtOptions) -> usize {
+    unsafe fn simple_format(&mut self, value: &FloatingDecimal<u64>, options: &FmtOptions) -> usize {
         let digits = value.digits;
         let exponent = value.exponent;
         debug_assert!(digits >= 1);
@@ -563,61 +649,8 @@ impl FPFormatter {
         self.ptr.offset_from(self.buffer) as usize
     }
 
-    /// Rounds the digits in the buffer that start at position `start_ptr`. The digit that
-    /// follows the last precision digit to keep is pointed by `removed_digit_ptr`. If this
-    /// digit is the last one, `potential_tie` is true.
-    /// In case the rounding generates a new digit because of carry (9.99|9 -> 10.00),
-    /// - if `can_eat_left=true`, the character at `start_ptr.sub(1)` can be used
-    /// - if `can_eat_left=false`, the digits must be moved to the right
-    ///
-    /// The method is rounding to tie even.
-    ///
-    /// Returns a tuple of booleans (`left`, `right`) where
-    /// * `left || right` = true if the rounding generated one extra digit because of a carry
-    /// * `left` = true if the extra digit ate up one digit to the left
-    /// * `right` = true if the extra digit made the buffer shift one position to the right
-    /// * `left` and `right` are mutually exclusive.
-    unsafe fn round(start_ptr: *mut u8, removed_digit_ptr: *mut u8, potential_tie: bool, can_eat_left: bool) -> (bool, bool) {
-        debug_assert!(start_ptr <= removed_digit_ptr);
-        let digits = removed_digit_ptr.offset_from(start_ptr) as usize;
-        let mut tie = potential_tie && *removed_digit_ptr == b'5';
-        let mut carry = *removed_digit_ptr >= b'5';
-        let mut ptr = removed_digit_ptr;
-        while carry && start_ptr < ptr {
-            ptr = ptr.sub(1);
-            if !tie || (tie && *ptr & 1 != 0) {
-                // rounds up
-                if *ptr == b'9' {
-                    *ptr = b'0';
-                } else {
-                    *ptr += 1;
-                    carry = false;
-                }
-            } else {
-                // rounds down
-                carry = false;
-            }
-            tie = false;
-        }
-        if carry || digits == 0 {
-            // one more digit to place on the left, either because of a carry or because we
-            // removed the last digit.
-            let new_digit = if tie || !carry { b'0' } else { b'1' };
-            if can_eat_left {
-                *ptr.sub(1) = new_digit;
-                (true, false)
-            } else {
-                ptr::copy(ptr, ptr.add(1), digits);
-                *ptr = new_digit;
-                (false, true)
-            }
-        } else {
-            (false, false)
-        }
-    }
-
     /// Formats `value` into the buffer according the `options`, returns the total length.
-    pub fn format(&mut self, value: &FloatingDecimal64, options: &FmtOptions) -> usize {
+    fn format(&mut self, value: &FloatingDecimal<u64>, options: &FmtOptions) -> usize {
         let forced_fixed = false;   // TODO: from options STD/FIX/...
 
         let digits = value.digits;
@@ -1105,8 +1138,8 @@ impl FPFormatter {
     ///
     /// Note:
     /// This function may temporarily write up to TO_CHARS_MIN_BUFFER_LEN characters into the buffer.
-    pub fn to_str(mut self, value: f64, options: &FmtOptions) -> String {
-        let v = Double::from(value);
+    fn to_str(mut self, value: f64, options: &FmtOptions) -> String {
+        let v = Decoded::from(value);
         unsafe {
             self.ptr = self.buffer;
             let length = match v.encoding() {
@@ -1124,7 +1157,7 @@ impl FPFormatter {
                     if options.trailing_dot_zero { 3 } else { 1 }
                 }
                 Encoding::Digits => {
-                    let dec = FloatingDecimal64::from(v);
+                    let dec = FloatingDecimal::from(v);
                     if options.mode == FmtMode::Simple {
                         self.simple_format(&dec, options)
                     } else {
@@ -1139,7 +1172,7 @@ impl FPFormatter {
     }
 }
 
-impl Drop for FPFormatter {
+impl Drop for NumFmtBuffer {
     fn drop(&mut self) {
         if self.size != 0 {
             let layout = Layout::array::<u8>(self.size).expect("could not create layout to deallocate buffer");
@@ -1172,18 +1205,18 @@ impl Drop for FPFormatter {
 ///  2. is as short as possible,
 ///  3. is as close to the input number as possible.
 pub fn dtoa(value: f64) -> String {
-    let fmt = FPFormatter::new();
+    let fmt = NumFmtBuffer::new();
     fmt.to_str(value, &FmtOptions { trailing_dot_zero: false, mode: FmtMode::Simple, ..FmtOptions::default() })
 }
 
 /// Converts the given double-precision number into decimal form.
 pub fn format(value: f64, width: Option<u32>, precision: Option<u32>, mode: FmtMode) -> String {
-    let fmt = FPFormatter::new();
+    let fmt = NumFmtBuffer::new();
     fmt.to_str(value, &FmtOptions { width, precision, mode, ..FmtOptions::default() })
 }
 
 pub fn format_opt(value: f64, options: &FmtOptions) -> String {
-    let fmt = FPFormatter::new();
+    let fmt = NumFmtBuffer::new();
     fmt.to_str(value, options)
 }
 
@@ -1210,7 +1243,7 @@ pub struct Fix {
 
 impl Display for Fix {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let fmt = FPFormatter::new();
+        let fmt = NumFmtBuffer::new();
         let s = fmt.to_str(self.value, &FmtOptions {
             width: f.width().and_then(|x| Some(x as u32)),
             precision: f.precision().and_then(|x| Some(x as u32)),
@@ -1225,7 +1258,7 @@ pub struct Sci {
 
 impl Display for Sci {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let fmt = FPFormatter::new();
+        let fmt = NumFmtBuffer::new();
         let s = fmt.to_str(self.value, &FmtOptions {
             width: f.width().and_then(|x| Some(x as u32)),
             precision: f.precision().and_then(|x| Some(x as u32)),

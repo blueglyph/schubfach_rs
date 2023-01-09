@@ -2,7 +2,7 @@
 
 use crate::*;
 use crate::FmtMode::{Fix, Sci};
-use crate::FPFormatter;
+use crate::NumFmtBuffer;
 
 fn test_format_opt(values: Vec<(f64, Option<u32>, Option<u32>, FmtMode, bool, &str)>) {
     let mut error = false;
@@ -297,7 +297,7 @@ fn round() {
             let start_ptr = buf.as_mut_ptr().add(start);
             let prev_ptr  = buf.as_mut_ptr().add(prev);
             let potential_tie = *prev_ptr.add(1) == b'#';
-            let (left, right) = FPFormatter::round(start_ptr, prev_ptr, potential_tie, can_eat_left);
+            let (left, right) = NumFmtBuffer::round(start_ptr, prev_ptr, potential_tie, can_eat_left);
             let msg = format!("test #{idx}: ");
             let res_buf = String::from_utf8(buf).unwrap();
             assert_eq!(left, exp_left, "{}left", msg);
