@@ -2,6 +2,8 @@
 //
 // Maths misc. functions
 
+use ilog::IntLog;
+
 /// Returns floor([x] / 2^[n])
 pub fn floor_div_pow2(x: i32, n: i32) -> i32 {
     x >> n
@@ -678,45 +680,5 @@ pub fn multiple_of_pow2(value: u64, e2: i32) -> bool {
 
 /// Returns the number of decimal digits required to represent `x`.
 pub fn decimal_length(x: u64) -> usize {
-    debug_assert!(1 <= x && x <= 99999999999999999_u64);
-    if x <= u32::MAX as u64 {
-        let lo = x as u32;
-        if lo < 100_000 {
-            if lo < 1_000 {
-                if lo < 10                      { 1 }
-                else if lo < 100                { 2 }
-                else                            { 3 }
-            } else {
-                if lo < 10_000                  { 4 }
-                else                            { 5 }
-            }
-        } else {
-            if lo < 100_000_000 {
-                if lo < 1_000_000               { 6 }
-                else if lo < 10_000_000         { 7 }
-                else                            { 8 }
-            } else {
-                if lo < 1_000_000_000           { 9 }
-                else                            { 10 }
-            }
-        }
-    } else {
-        if x < 10_000_000_000_000 {
-            if x < 100_000_000_000 {
-                if x < 10_000_000_000           { 10 }
-                else                            { 11 }
-            } else {
-                if x < 1_000_000_000_000        { 12 }
-                else                            { 13 }
-            }
-        } else {
-            if x < 1_000_000_000_000_000 {
-                if x < 100_000_000_000_000      { 14 }
-                else                            { 15 }
-            } else {
-                if x < 10_000_000_000_000_000   { 16 }
-                else                            { 17 }
-            }
-        }
-    }
+    u64::log10(x) + 1
 }
