@@ -241,13 +241,14 @@ impl From<Decoded<u64>> for FloatingDecimal<u64> {
 
 // ---------------------------------------------------------------------------------------------
 
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum FmtMode {
     Fix,
     Sci,
     Simple
 }
 
+#[derive(Clone)]
 /// Formatting options for [NumFmtBuffer] methods
 pub struct FmtOptions {
     /// maximum string length
@@ -536,9 +537,9 @@ impl NumFmtBuffer {
 }
 
 trait NumFormat<F, U> {
-    unsafe fn simple_format(&mut self, value: &FloatingDecimal<U>, options: &FmtOptions) -> usize;
-    fn format(&mut self, value: &FloatingDecimal<U>, options: &FmtOptions) -> usize;
-    fn to_str(self, value: F, options: &FmtOptions) -> String;
+    unsafe fn simple_format(&mut self, value: &FloatingDecimal<U>) -> usize;
+    fn format(&mut self, value: &FloatingDecimal<U>) -> usize;
+    fn to_str(self, value: F) -> String;
 }
 
 impl NumFormat<f64, u64> for NumFmtBuffer {
@@ -550,7 +551,7 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
     /// * `options`, only uses `force_trailing_dot_zero`: includes the trailing ".0" for integer values
     ///
     /// Returns the length of the string written into the buffer.
-    unsafe fn simple_format(&mut self, value: &FloatingDecimal<u64>, options: &FmtOptions) -> usize {
+    unsafe fn simple_format(&mut self, value: &FloatingDecimal<u64>) -> usize {
         let digits = value.digits;
         let exponent = value.exponent;
         debug_assert!(digits >= 1);
@@ -605,7 +606,7 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
                 } else {
                     // digits[000]
                     self.ptr = decimal_ptr;
-                    if options.trailing_dot_zero {
+                    if self.options.trailing_dot_zero {
                         ptr::copy(b".0" as *const u8, self.ptr, 2);
                         self.ptr = self.ptr.add(2);
                     }
@@ -650,7 +651,7 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
     }
 
     /// Formats `value` into the buffer according the `options`, returns the total length.
-    fn format(&mut self, value: &FloatingDecimal<u64>, options: &FmtOptions) -> usize {
+    fn format(&mut self, value: &FloatingDecimal<u64>) -> usize {
         let forced_fixed = false;   // TODO: from options STD/FIX/...
 
         let digits = value.digits;
@@ -665,13 +666,13 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
             self.write_sign(value.sign);
 
             // width and precision, subtract 1 from width if option given and sign consumed
-            let width = options.width.and_then(|width| Some(width - value.sign as u32));
-            let mut precision = options.precision;
+            let width = self.options.width.and_then(|width| Some(width - value.sign as u32));
+            let mut precision = self.options.precision;
 
             // extracts the raw digits
             let num_digits0 = decimal_length(digits);
             let mut decimal_point = num_digits0 as i32 + exponent;
-            let mut use_fixed = options.mode == FmtMode::Fix &&
+            let mut use_fixed = self.options.mode == FmtMode::Fix &&
                 Self::MIN_FIXED_DECIMAL_POINT <= decimal_point && decimal_point <= Self::MAX_FIXED_DECIMAL_POINT;
             let decimal_digits_position: usize =
                 if use_fixed {
@@ -868,8 +869,8 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
                     } else {
                         num_digits + -decimal_point as usize + 2
                     } + value.sign;
-                    debug_assert!(length <= options.width.unwrap_or(u32::MAX) as usize,
-                              "length ({}) > width ({:?})", length, options.width);
+                    debug_assert!(length <= self.options.width.unwrap_or(u32::MAX) as usize,
+                              "length ({}) > width ({:?})", length, self.options.width);
                 } else {
                     // D-D.d-d or D-D(0-0)[.0]
                     // -----------------------
@@ -905,7 +906,7 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
                         } else {
                             // D---D0--0[.0]
                             self.ptr = decimal_ptr;
-                            let dot_zero = options.trailing_dot_zero // we prefer ".0"
+                            let dot_zero = self.options.trailing_dot_zero // we prefer ".0"
                                 && precision.unwrap_or(1) > 0        // if precision is not constrained to 0
                                 && num_digits0 + 2 <= width.unwrap_or(u32::MAX) as usize; // and if there is enough space
                             if dot_zero || precision.unwrap_or(0) > 0 {
@@ -974,7 +975,7 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
                     num_exp_digits_abs + if sci_exponent < 0 { 1 } else { 0 }
                 };
                 if let Some(w) = width {
-                    if options.panic_on_issue && w < 2 + num_exp_digits {   // 2 = first digit + 'E'
+                    if self.options.panic_on_issue && w < 2 + num_exp_digits {   // 2 = first digit + 'E'
                         // TODO: returns an error, panics if options.panic in upper function
                         panic!("cannot format value with width <= {w}, requires at least {} characters", 3 + num_exp_digits);
                     }
@@ -1046,7 +1047,7 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
 
                 // Mantissa
                 // --------
-                if options.trailing_dot_zero // we prefer ".0"
+                if self.options.trailing_dot_zero // we prefer ".0"
                     && num_digits == 1 // it is not already there
                     && precision.is_none() // precision is not constrained
                     && 3 + num_exp_digits <= width.unwrap_or(u32::MAX) // there is enough space
@@ -1138,7 +1139,7 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
     ///
     /// Note:
     /// This function may temporarily write up to TO_CHARS_MIN_BUFFER_LEN characters into the buffer.
-    fn to_str(mut self, value: f64, options: &FmtOptions) -> String {
+    fn to_str(mut self, value: f64) -> String {
         let v = Decoded::from(value);
         unsafe {
             self.ptr = self.buffer;
@@ -1154,14 +1155,14 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
                 }
                 Encoding::Zero => {
                     ptr::copy(b"0.0 " as *const u8, self.ptr, 4);
-                    if options.trailing_dot_zero { 3 } else { 1 }
+                    if self.options.trailing_dot_zero { 3 } else { 1 }
                 }
                 Encoding::Digits => {
                     let dec = FloatingDecimal::from(v);
-                    if options.mode == FmtMode::Simple {
-                        self.simple_format(&dec, options)
+                    if self.options.mode == FmtMode::Simple {
+                        self.simple_format(&dec)
                     } else {
-                        self.format(&dec, options)
+                        self.format(&dec)
                     }
                 }
             };
@@ -1205,19 +1206,25 @@ impl Drop for NumFmtBuffer {
 ///  2. is as short as possible,
 ///  3. is as close to the input number as possible.
 pub fn dtoa(value: f64) -> String {
-    let fmt = NumFmtBuffer::new();
-    fmt.to_str(value, &FmtOptions { trailing_dot_zero: false, mode: FmtMode::Simple, ..FmtOptions::default() })
+    let mut fmt = NumFmtBuffer::new();
+    fmt.options.trailing_dot_zero = false;
+    fmt.options.mode = FmtMode::Simple;
+    fmt.to_str(value)
 }
 
 /// Converts the given double-precision number into decimal form.
 pub fn format(value: f64, width: Option<u32>, precision: Option<u32>, mode: FmtMode) -> String {
-    let fmt = NumFmtBuffer::new();
-    fmt.to_str(value, &FmtOptions { width, precision, mode, ..FmtOptions::default() })
+    let mut fmt = NumFmtBuffer::new();
+    fmt.options.width = width;
+    fmt.options.precision = precision;
+    fmt.options.mode = mode;
+    fmt.to_str(value)
 }
 
 pub fn format_opt(value: f64, options: &FmtOptions) -> String {
-    let fmt = NumFmtBuffer::new();
-    fmt.to_str(value, options)
+    let mut fmt = NumFmtBuffer::new();
+    fmt.options = options.clone();
+    fmt.to_str(value)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1243,11 +1250,10 @@ pub struct Fix {
 
 impl Display for Fix {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let fmt = NumFmtBuffer::new();
-        let s = fmt.to_str(self.value, &FmtOptions {
-            width: f.width().and_then(|x| Some(x as u32)),
-            precision: f.precision().and_then(|x| Some(x as u32)),
-            ..FmtOptions::default() });
+        let mut fmt = NumFmtBuffer::new();
+        fmt.options.width = f.width().and_then(|x| Some(x as u32));
+        fmt.options.precision = f.precision().and_then(|x| Some(x as u32));
+        let s = fmt.to_str(self.value);
         f.pad_integral(true, "", &s)
     }
 }
@@ -1258,12 +1264,11 @@ pub struct Sci {
 
 impl Display for Sci {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let fmt = NumFmtBuffer::new();
-        let s = fmt.to_str(self.value, &FmtOptions {
-            width: f.width().and_then(|x| Some(x as u32)),
-            precision: f.precision().and_then(|x| Some(x as u32)),
-            mode: FmtMode::Sci,
-            ..FmtOptions::default() });
+        let mut fmt = NumFmtBuffer::new();
+        fmt.options.width = f.width().and_then(|x| Some(x as u32));
+        fmt.options.precision = f.precision().and_then(|x| Some(x as u32));
+        fmt.options.mode = FmtMode::Sci;
+        let s = fmt.to_str(self.value);
         f.pad_integral(true, "", &s)
     }
 }
