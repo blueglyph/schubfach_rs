@@ -241,7 +241,7 @@ impl From<Decoded<u64>> for FloatingDecimal<u64> {
 
 // ---------------------------------------------------------------------------------------------
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum FmtMode {
     Fix,
     Sci,
@@ -1229,45 +1229,34 @@ pub fn format_opt(value: f64, options: &FmtOptions) -> String {
 
 // ---------------------------------------------------------------------------------------------
 
-pub trait SF {
-    fn to_fix(&self) -> Fix;
-    fn to_sci(&self) -> Sci;
+pub struct NumWithOptions<F: Sized> {
+    value: F,
+    mode: FmtMode
 }
 
-impl SF for f64 {
-    fn to_fix(&self) -> Fix {
-        Fix { value: *self }
+pub trait AddOptions
+    where Self: Sized
+{
+    fn to_fix(&self) -> NumWithOptions<Self>;
+    fn to_sci(&self) -> NumWithOptions<Self>;
+}
+
+impl AddOptions for f64 {
+    fn to_fix(&self) -> NumWithOptions<Self> {
+        NumWithOptions { value: *self, mode: FmtMode::Fix }
     }
 
-    fn to_sci(&self) -> Sci {
-        Sci { value: *self }
+    fn to_sci(&self) -> NumWithOptions<Self> {
+        NumWithOptions { value: *self, mode: FmtMode::Sci }
     }
 }
 
-pub struct Fix {
-    value: f64
-}
-
-impl Display for Fix {
+impl Display for NumWithOptions<f64> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut fmt = NumFmtBuffer::new();
         fmt.options.width = f.width().and_then(|x| Some(x as u32));
         fmt.options.precision = f.precision().and_then(|x| Some(x as u32));
-        let s = fmt.to_str(self.value);
-        f.pad_integral(true, "", &s)
-    }
-}
-
-pub struct Sci {
-    value: f64
-}
-
-impl Display for Sci {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let mut fmt = NumFmtBuffer::new();
-        fmt.options.width = f.width().and_then(|x| Some(x as u32));
-        fmt.options.precision = f.precision().and_then(|x| Some(x as u32));
-        fmt.options.mode = FmtMode::Sci;
+        fmt.options.mode = self.mode;
         let s = fmt.to_str(self.value);
         f.pad_integral(true, "", &s)
     }
