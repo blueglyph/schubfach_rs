@@ -4,6 +4,17 @@ use crate::*;
 use crate::FmtMode::{Fix, Sci};
 use crate::NumFmtBuffer;
 
+
+#[test]
+fn limits() {
+    let mut value: f64 = 1.2345678901234567;
+    for _ in 0..10 {
+        value *= 0.1;
+        let s = format(value, None, None, Fix);
+        println!("len: {}, value: {s}", s.len());
+    }
+}
+
 fn test_format_opt(values: Vec<(f64, Option<u32>, Option<u32>, FmtMode, bool, &str)>) {
     let mut error = false;
     for (idx, (value, width, precision, mode, trailing_dot_zero, exp_string)) in values.into_iter().enumerate() {

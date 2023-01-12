@@ -662,6 +662,43 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
         debug_assert!(exponent >= -999);
         debug_assert!(exponent <= 999);
 
+        // Maximum buffer footprint:
+        // a) fixed:
+        //   a.1) if decimal_point < 0 "0.(0-0)d-d"
+        //     - 1: "-" or "+" sign
+        //     - 17: digits
+        //     - 2: "0."
+        //     - dpn: decimal_point.abs() <= Self::MIN_FIXED_DECIMAL_POINT.abs()
+        //     - remaining precision if specified
+        //     => size = max(20 + Self::MIN_FIXED_DECIMAL_POINT.abs(), 3 + precision)
+        //   a.2) if 0 < dpp = decimal_point < num_digits0: "d-d.d-d"
+        //     - 1: sign
+        //     - 1: "."
+        //     - 17: digits
+        //     - remaining precision if specified: max "-" + 16 + "." + 1 + (precision - 1)
+        //     => size = max(19, 18 + precision)
+        //   a.3) if num_digits0 <= dpp: "d-d(0-0).0"
+        //     - 1: sign
+        //     - max(17, dpp): digits <= max(17, Self::MAX_FIXED_DECIMAL_POINT)
+        //     - 2: ".0"
+        //     - remaining precision if specified
+        //     => size = max(3 + max(17, Self::MAX_FIXED_DECIMAL_POINT), 2 + precision)
+        // b) scientific:
+        //   - 1:  "-" or "+" sign
+        //   - 17: digits
+        //   - 1:  "."
+        //   - 2:  "e-"
+        //   - 3:  exponent digits
+        //   - remaining precision if specified: "-" + 1 + "." + precision + "e-" + 3
+        //   => size = max(24, 8 + precision)
+        // c) engineer: same as scientific but rem. precision: "-" + 3 + "." + precision + "e-" + 3
+        //   => size = max(24, 10 + precision)
+        //
+        // size = max(24,
+        //            20 + Self::MIN_FIXED_DECIMAL_POINT.abs(),
+        //             3 + Self::MAX_FIXED_DECIMAL_POINT,
+        //            18 + precision)
+
         self.ptr = self.buffer;
         unsafe {
             // writes the sign and advances ptr if necessary
