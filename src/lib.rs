@@ -559,6 +559,7 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
         debug_assert!(exponent >= -999);
         debug_assert!(exponent <= 999);
 
+        self.ptr = self.buffer;
         self.write_sign(value.sign);
 
         let mut num_digits = decimal_length(digits);
@@ -661,6 +662,7 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
         debug_assert!(exponent >= -999);
         debug_assert!(exponent <= 999);
 
+        self.ptr = self.buffer;
         unsafe {
             // writes the sign and advances ptr if necessary
             self.write_sign(value.sign);
@@ -1142,19 +1144,19 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
     fn to_str(mut self, value: f64) -> String {
         let v = Decoded::from(value);
         unsafe {
-            self.ptr = self.buffer;
             let length = match v.encoding() {
                 Encoding::NaN => {
-                    ptr::copy(b"NaN " as *const u8, self.ptr, 4);
+                    ptr::copy(b"NaN " as *const u8, self.buffer, 4);
                     3
                 }
                 Encoding::Inf => {
+                    self.ptr = self.buffer;
                     self.write_sign(v.sign_bit());
                     ptr::copy(b"inf " as *const u8, self.ptr, 4);
                     3 + v.sign_bit()
                 }
                 Encoding::Zero => {
-                    ptr::copy(b"0.0 " as *const u8, self.ptr, 4);
+                    ptr::copy(b"0.0 " as *const u8, self.buffer, 4);
                     if self.options.trailing_dot_zero { 3 } else { 1 }
                 }
                 Encoding::Digits => {
