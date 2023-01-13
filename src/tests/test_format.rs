@@ -10,7 +10,7 @@ fn limits() {
     let mut value: f64 = 1.2345678901234567;
     for _ in 0..10 {
         value *= 0.1;
-        let s = format(value, None, None, Fix);
+        let s = value.format(None, None, Fix);
         println!("len: {}, value: {s}", s.len());
     }
 }
@@ -25,7 +25,7 @@ fn test_format_opt(values: Vec<(f64, Option<u32>, Option<u32>, FmtMode, bool, &s
             mode,
             ..FmtOptions::default()
         };
-        let string = format_opt(value, &options);
+        let string = value.format_opt(&options);
         if string != exp_string {
             error = true;
             println!("test #{idx}: expecting '{exp_string}' but got '{string}'");

@@ -14,7 +14,7 @@ fn format_options() {
         mode: FmtMode::Fix,
         ..FmtOptions::default()
     };
-    assert_eq!(format_opt(1.0, &options), "1.0");
+    assert_eq!(1.0.format_opt(&options), "1.0");
 }
 
 #[test]

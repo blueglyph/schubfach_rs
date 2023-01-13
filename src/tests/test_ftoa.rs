@@ -5,10 +5,10 @@ use std::mem;
 use std::str::FromStr;
 use std::time::Instant;
 use num::ToPrimitive;
-use crate::dtoa;
+use crate::FormatInterface;
 
 #[test]
-fn limits_dtoa() {
+fn limits_ftoa() {
     let tests: &[(f64, &str)] = &[
         // those tests depend on the value of FPFormatter::MIN_FIXED_DECIMAL_POINT
         (0.0000002, "0.0000002"),
@@ -18,17 +18,17 @@ fn limits_dtoa() {
         (180143985094819840000000.0, "1.8014398509481984e23"),  // = (1 << 54) * 1E7
     ];
     for (idx, (value, exp)) in tests.into_iter().enumerate() {
-        let res = dtoa(*value);
+        let res = value.ftoa();
         assert_eq!(res, *exp, "failed in test #{idx}");
     }
 }
 
 /// Timing test, launch with
 ///
-/// ```cargo test -r timing_random_dtoa -- --ignored --test-threads=1 --show-output```
+/// ```cargo test -r timing_random_ftoa -- --ignored --test-threads=1 --show-output```
 #[test]
 #[ignore]
-fn timing_random_dtoa() {
+fn timing_random_ftoa() {
     // we cannot simply compare all values to Grisu3/Dragon4 because some roundings will be different,
     // here we check that the parsed string yields the same original value:
     let mut rng = oorandom::Rand64::new(0);
@@ -42,7 +42,7 @@ fn timing_random_dtoa() {
                 break;
             }
         }
-        let res = dtoa(f);
+        let res = f.ftoa();
         let f2 = f64::from_str(&res).expect(&format!("test #{i}: could not convert {f} -> '{res}' -> f64"));
         assert_eq!(f, f2);
     }
@@ -52,10 +52,10 @@ fn timing_random_dtoa() {
 
 /// Timing test, launch with
 ///
-/// ```cargo test -r timing_digits_dtoa -- --ignored --test-threads=1 --show-output```
+/// ```cargo test -r timing_digits_ftoa -- --ignored --test-threads=1 --show-output```
 #[test]
 #[ignore]
-fn timing_digits_dtoa() {
+fn timing_digits_ftoa() {
     const MAX_TESTS: u64 = 2_000_000;
     const MAX_VALUE: f64 = ((1_u64 << 54) - 1) as f64;
 
@@ -67,7 +67,7 @@ fn timing_digits_dtoa() {
         let nbr_tests = min(MAX_TESTS, high.to_u64().unwrap() * 2 / 5);
         for _ in 0..nbr_tests {
             let value = (rng.rand_float() * (high - low) + low).trunc();
-            let res = dtoa(value);
+            let res = value.ftoa();
             let exp = value.to_string();
             assert_eq!(res, exp, "incorrect string");
         }

@@ -31,7 +31,7 @@ fn find_issues(depth: usize, verbose: bool, show_error: bool, negative: bool, po
     for (sval, pr) in it {
         let val = f64::from_str(&sval).expect(&format!("error converting {} to f64", sval));
         // let display_val = format!("{val:.pr$}");
-        let display_val = format(val, None, Some(pr as u32), FmtMode::Fix);
+        let display_val = val.format(None, Some(pr as u32), FmtMode::Fix);
         let sround_val = str_sround(&sval, pr, policy);
         let comp = if display_val == sround_val {
             "=="

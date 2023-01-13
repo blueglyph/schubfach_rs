@@ -540,7 +540,7 @@ trait NumFormat<F, U> {
 
     unsafe fn simple_format(&mut self, value: &FloatingDecimal<U>) -> usize;
     fn format(&mut self, value: &FloatingDecimal<U>) -> usize;
-    fn to_str(self, value: F) -> String;
+    fn to_string(self, value: F) -> String;
 }
 
 impl NumFormat<f64, u64> for NumFmtBuffer {
@@ -1202,7 +1202,7 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
     ///
     /// Note:
     /// This function may temporarily write up to TO_CHARS_MIN_BUFFER_LEN characters into the buffer.
-    fn to_str(mut self, value: f64) -> String {
+    fn to_string(mut self, value: f64) -> String {
         let v = Decoded::from(value);
         unsafe {
             let length = match v.encoding() {
@@ -1250,67 +1250,74 @@ impl Drop for NumFmtBuffer {
 
 // ---------------------------------------------------------------------------------------------
 
-/// Converts the given double-precision number into decimal form.
-///
-/// ```
-/// use schubfach::dtoa;
-///
-/// assert_eq!(dtoa(12.3456789), "12.3456789");
-/// assert_eq!(dtoa(1.5e-300), "1.5e-300");
-/// assert_eq!(dtoa(-1.5e300), "-1.5e300");
-/// ```
-///
-/// The output format is similar to `{f}` except when the position of the decimal point is out of
-/// the boundaries (MIN_FIXED_DECIMAL_POINT and MAX_FIXED_DECIMAL_POINT), in which case the format
-/// is similar to `{e}`.
-///
-/// The output is optimal, i.e. the output string
-///  1. rounds back to the input number when read in (using round-to-nearest-even)
-///  2. is as short as possible,
-///  3. is as close to the input number as possible.
-pub fn dtoa(value: f64) -> String {
-    let mut fmt = NumFmtBuffer::new();
-    fmt.options.trailing_dot_zero = false;
-    fmt.options.mode = FmtMode::Simple;
-    fmt.to_str(value)
-}
-
-/// Converts the given double-precision number into decimal form.
-pub fn format(value: f64, width: Option<u32>, precision: Option<u32>, mode: FmtMode) -> String {
-    let mut fmt = NumFmtBuffer::new();
-    fmt.options.width = width;
-    fmt.options.precision = precision;
-    fmt.options.mode = mode;
-    fmt.to_str(value)
-}
-
-pub fn format_opt(value: f64, options: &FmtOptions) -> String {
-    let mut fmt = NumFmtBuffer::new();
-    fmt.options = options.clone();
-    fmt.to_str(value)
-}
-
-// ---------------------------------------------------------------------------------------------
-
 pub struct NumWithOptions<F: Sized> {
     value: F,
     mode: FmtMode
 }
 
-pub trait AddOptions
+pub trait FormatInterface
     where Self: Sized
 {
+    /// FIX interface to Display formatter (fixed decimal place).
     fn to_fix(&self) -> NumWithOptions<Self>;
+    /// SCI interface to Display formatter (scientific format).
     fn to_sci(&self) -> NumWithOptions<Self>;
+
+    /// Converts the number into decimal form.
+    fn ftoa(&self) -> String;
+    /// Converts the number into decimal form.
+    fn format(&self, width: Option<u32>, precision: Option<u32>, mode: FmtMode) -> String;
+    /// Converts the number into decimal form.
+    fn format_opt(&self, options: &FmtOptions) -> String;
 }
 
-impl AddOptions for f64 {
+impl FormatInterface for f64 {
     fn to_fix(&self) -> NumWithOptions<Self> {
         NumWithOptions { value: *self, mode: FmtMode::Fix }
     }
 
     fn to_sci(&self) -> NumWithOptions<Self> {
         NumWithOptions { value: *self, mode: FmtMode::Sci }
+    }
+
+    /// Converts the double-precision number into decimal form.
+    ///
+    /// ```
+    /// use schubfach::FormatInterface;
+    ///
+    /// assert_eq!(12.3456789.ftoa(), "12.3456789");
+    /// assert_eq!(1.5e-300.ftoa(), "1.5e-300");
+    /// ```
+    ///
+    /// The output format is similar to `{}` except when the position of the decimal point is out of
+    /// the boundaries (MIN_FIXED_DECIMAL_POINT and MAX_FIXED_DECIMAL_POINT), in which case the format
+    /// is similar to `{:e}`.
+    ///
+    /// The output is optimal, i.e. the output string
+    ///  1. rounds back to the input number when read in (using round-to-nearest-even)
+    ///  2. is as short as possible,
+    ///  3. is as close to the input number as possible.
+    fn ftoa(&self) -> String {
+        let mut fmt = NumFmtBuffer::new();
+        fmt.options.trailing_dot_zero = false;
+        fmt.options.mode = FmtMode::Simple;
+        fmt.to_string(*self)
+    }
+
+    /// Converts the double-precision number into decimal form.
+    fn format(&self, width: Option<u32>, precision: Option<u32>, mode: FmtMode) -> String {
+        let mut fmt = NumFmtBuffer::new();
+        fmt.options.width = width;
+        fmt.options.precision = precision;
+        fmt.options.mode = mode;
+        fmt.to_string(*self)
+    }
+
+    /// Converts the double-precision number into decimal form.
+    fn format_opt(&self, options: &FmtOptions) -> String {
+        let mut fmt = NumFmtBuffer::new();
+        fmt.options = options.clone();
+        fmt.to_string(*self)
     }
 }
 
@@ -1320,7 +1327,7 @@ impl Display for NumWithOptions<f64> {
         fmt.options.width = f.width().and_then(|x| Some(x as u32));
         fmt.options.precision = f.precision().and_then(|x| Some(x as u32));
         fmt.options.mode = self.mode;
-        let s = fmt.to_str(self.value);
+        let s = fmt.to_string(self.value);
         f.pad_integral(true, "", &s)
     }
 }
