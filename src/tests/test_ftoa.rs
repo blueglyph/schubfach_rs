@@ -47,7 +47,7 @@ fn timing_random_ftoa() {
         assert_eq!(f, f2);
     }
     let elapsed = timer.elapsed();
-    println!("elapsed time: {:.3} s", elapsed.as_secs_f64());
+    println!("timing_random_ftoa, elapsed time: {:.3} s", elapsed.as_secs_f64());
 }
 
 /// Timing test, launch with
@@ -75,5 +75,5 @@ fn timing_digits_ftoa() {
         high = if digit < 16 { high * 10.0 } else { MAX_VALUE };
     }
     let elapsed = timer.elapsed();
-    println!("elapsed time: {:.3} s", elapsed.as_secs_f64());
+    println!("timing_digits_ftoa, elapsed time: {:.3} s", elapsed.as_secs_f64());
 }
