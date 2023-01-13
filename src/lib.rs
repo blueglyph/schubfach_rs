@@ -286,9 +286,7 @@ struct NumFmtBuffer {
 }
 
 impl NumFmtBuffer {
-    const BUFFER_LEN: usize = 64;
-    const MIN_FIXED_DECIMAL_POINT: i32 = -6; // 0.000000[digits] -> fixed, more zeros -> scientific
-    const MAX_FIXED_DECIMAL_POINT: i32 = 17; // [17 digits].0    -> fixed, more digits -> scientific
+    const BUFFER_LEN: usize = 48;   // see conditions in implemented traits (e.g. NumFormat)
 
     pub fn new() -> Self {
         let size = Self::BUFFER_LEN;
@@ -537,12 +535,62 @@ impl NumFmtBuffer {
 }
 
 trait NumFormat<F, U> {
+    const MIN_FIXED_DECIMAL_POINT: i32 = -6; // 0.000000[17 digits] -> fixed, more zeros -> scientific
+    const MAX_FIXED_DECIMAL_POINT: i32 = 23; // [17 digits]000000.0 -> fixed, more digits -> scientific
+
     unsafe fn simple_format(&mut self, value: &FloatingDecimal<U>) -> usize;
     fn format(&mut self, value: &FloatingDecimal<U>) -> usize;
     fn to_str(self, value: F) -> String;
 }
 
 impl NumFormat<f64, u64> for NumFmtBuffer {
+
+    // -----------------------------------------------------------------------------------------
+
+    // Maximum buffer footprint for format():
+    // a) fixed:
+    //   a.1) if decimal_point < 0 "0.(0-0)d-d"
+    //     - 1: "-" or "+" sign
+    //     - 17: digits
+    //     - 2: "0."
+    //     - dpn: decimal_point.abs() <= Self::MIN_FIXED_DECIMAL_POINT.abs()
+    //     - remaining precision if specified
+    //     => size = max(20 + Self::MIN_FIXED_DECIMAL_POINT.abs(), 3 + precision)
+    //   a.2) if 0 < dpp = decimal_point < num_digits0: "d-d.d-d"
+    //     - 1: sign
+    //     - 1: "."
+    //     - 17: digits
+    //     - remaining precision if specified: max "-" + 16 + "." + 1 + (precision - 1)
+    //     => size = max(19, 18 + precision)
+    //   a.3) if num_digits0 <= dpp: "d-d(0-0).0"
+    //     - 1: sign
+    //     - max(17, dpp): digits <= max(17, Self::MAX_FIXED_DECIMAL_POINT)
+    //     - 2: ".0"
+    //     - remaining precision if specified
+    //     => size = max(3 + max(17, Self::MAX_FIXED_DECIMAL_POINT), 2 + precision)
+    // b) scientific:
+    //   - 1:  "-" or "+" sign
+    //   - 17: digits
+    //   - 1:  "."
+    //   - 2:  "e-"
+    //   - 3:  exponent digits
+    //   - remaining precision if specified: "-" + 1 + "." + precision + "e-" + 3
+    //   => size = max(24, 8 + precision)
+    // c) engineer: same as scientific but rem. precision: "-" + 3 + "." + precision + "e-" + 3
+    //   => size = max(24, 10 + precision)
+    //
+    // Maximum buffer footprint for format_simple(): same but no precision and engineering mode
+    //   => same max size without precision
+    //
+    // size = max(24,                                       = 24
+    //            20 + Self::MIN_FIXED_DECIMAL_POINT.abs(), = 26
+    //             3 + Self::MAX_FIXED_DECIMAL_POINT,       = 26
+    //            18 + precision)                           => max precision = 6
+    // We would like max precision = at least 17 + Self::MIN_FIXED_DECIMAL_POINT.abs() = 23
+    // => min size = 18 + precision = 41
+
+    // -----------------------------------------------------------------------------------------
+
     /// Converts the finite double-precision number into decimal form and stores the result into
     /// `self.buffer`.
     ///
@@ -552,6 +600,11 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
     ///
     /// Returns the length of the string written into the buffer.
     unsafe fn simple_format(&mut self, value: &FloatingDecimal<u64>) -> usize {
+        assert!(self.size >= max(
+            max(24, 20 + Self::MIN_FIXED_DECIMAL_POINT.abs() as usize),
+            3 + Self::MAX_FIXED_DECIMAL_POINT as usize),
+            "buffer size is too small for simple_format()");
+
         let digits = value.digits;
         let exponent = value.exponent;
         debug_assert!(digits >= 1);
@@ -653,6 +706,11 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
 
     /// Formats `value` into the buffer according the `options`, returns the total length.
     fn format(&mut self, value: &FloatingDecimal<u64>) -> usize {
+        assert!(self.size >= max(
+            max(24, 20 + Self::MIN_FIXED_DECIMAL_POINT.abs() as usize),
+            3 + Self::MAX_FIXED_DECIMAL_POINT as usize),
+            "buffer size is too small for format()");
+
         let forced_fixed = false;   // TODO: from options STD/FIX/...
 
         let digits = value.digits;
@@ -662,51 +720,17 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
         debug_assert!(exponent >= -999);
         debug_assert!(exponent <= 999);
 
-        // Maximum buffer footprint:
-        // a) fixed:
-        //   a.1) if decimal_point < 0 "0.(0-0)d-d"
-        //     - 1: "-" or "+" sign
-        //     - 17: digits
-        //     - 2: "0."
-        //     - dpn: decimal_point.abs() <= Self::MIN_FIXED_DECIMAL_POINT.abs()
-        //     - remaining precision if specified
-        //     => size = max(20 + Self::MIN_FIXED_DECIMAL_POINT.abs(), 3 + precision)
-        //   a.2) if 0 < dpp = decimal_point < num_digits0: "d-d.d-d"
-        //     - 1: sign
-        //     - 1: "."
-        //     - 17: digits
-        //     - remaining precision if specified: max "-" + 16 + "." + 1 + (precision - 1)
-        //     => size = max(19, 18 + precision)
-        //   a.3) if num_digits0 <= dpp: "d-d(0-0).0"
-        //     - 1: sign
-        //     - max(17, dpp): digits <= max(17, Self::MAX_FIXED_DECIMAL_POINT)
-        //     - 2: ".0"
-        //     - remaining precision if specified
-        //     => size = max(3 + max(17, Self::MAX_FIXED_DECIMAL_POINT), 2 + precision)
-        // b) scientific:
-        //   - 1:  "-" or "+" sign
-        //   - 17: digits
-        //   - 1:  "."
-        //   - 2:  "e-"
-        //   - 3:  exponent digits
-        //   - remaining precision if specified: "-" + 1 + "." + precision + "e-" + 3
-        //   => size = max(24, 8 + precision)
-        // c) engineer: same as scientific but rem. precision: "-" + 3 + "." + precision + "e-" + 3
-        //   => size = max(24, 10 + precision)
-        //
-        // size = max(24,
-        //            20 + Self::MIN_FIXED_DECIMAL_POINT.abs(),
-        //             3 + Self::MAX_FIXED_DECIMAL_POINT,
-        //            18 + precision)
-
         self.ptr = self.buffer;
         unsafe {
             // writes the sign and advances ptr if necessary
             self.write_sign(value.sign);
 
-            // width and precision, subtract 1 from width if option given and sign consumed
-            let width = self.options.width.and_then(|width| Some(width - value.sign as u32));
-            let mut precision = self.options.precision;
+            // width and precision, subtract 1 from width if option given and sign consumed, and
+            // ensure width and precision are not larger than the buffer size allows
+            let width = self.options.width
+                .and_then(|width| Some(min(width - value.sign as u32, self.size as u32)));
+            let mut precision = self.options.precision
+                .and_then(|prec| Some(min(prec, self.size as u32 - 18)));
 
             // extracts the raw digits
             let num_digits0 = decimal_length(digits);
