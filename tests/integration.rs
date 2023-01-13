@@ -36,3 +36,18 @@ fn display_f64() {
     assert_eq!(format!("{}",    val3.to_sci()), "1.5e3",     "test with sci, '{{}}'");
     assert_eq!(format!("{}",    val4.to_sci()), "-3.125e-2", "test with sci, '{{}}'");
 }
+
+#[test]
+fn buffer_f64() {
+    let values = [
+        (0.5,       "0.5"),
+        (1.5,       "1.5"),
+        (1500.0,    "1500.0"),
+        (-0.03125,  "-0.03125"),
+    ];
+    let mut buffer = NumFmtBuffer::new();
+    for (value, exp_string) in values {
+        let string: &str = buffer.to_str(value);
+        assert_eq!(string, exp_string);
+    }
+}

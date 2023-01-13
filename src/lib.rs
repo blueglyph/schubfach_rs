@@ -276,7 +276,7 @@ impl Default for FmtOptions {
 }
 
 /// Floating-point formatter
-struct NumFmtBuffer {
+pub struct NumFmtBuffer {
     /// buffer holding the floating-point value decimal representation
     buffer: *mut u8,
     /// current pointer into the buffer
@@ -534,13 +534,15 @@ impl NumFmtBuffer {
     }
 }
 
-trait NumFormat<F, U> {
+pub trait NumFormat<F, U> {
     const MIN_FIXED_DECIMAL_POINT: i32 = -6; // 0.000000[17 digits] -> fixed, more zeros -> scientific
     const MAX_FIXED_DECIMAL_POINT: i32 = 23; // [17 digits]000000.0 -> fixed, more digits -> scientific
 
-    unsafe fn simple_format(&mut self, value: &FloatingDecimal<U>) -> usize;
-    fn format(&mut self, value: &FloatingDecimal<U>) -> usize;
+    unsafe fn simple_format(&mut self, decoded: Decoded<U>) -> usize;
+    fn format(&mut self, decoded: Decoded<U>) -> usize;
+    fn fp_format(&mut self, value: f64) -> usize;
     fn to_string(self, value: F) -> String;
+    fn to_str(&mut self, value: F) -> &str;
 }
 
 impl NumFormat<f64, u64> for NumFmtBuffer {
@@ -599,21 +601,22 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
     /// * `options`, only uses `force_trailing_dot_zero`: includes the trailing ".0" for integer values
     ///
     /// Returns the length of the string written into the buffer.
-    unsafe fn simple_format(&mut self, value: &FloatingDecimal<u64>) -> usize {
+    unsafe fn simple_format(&mut self, decoded: Decoded<BitsType>) -> usize {
         assert!(self.size >= max(
             max(24, 20 + Self::MIN_FIXED_DECIMAL_POINT.abs() as usize),
             3 + Self::MAX_FIXED_DECIMAL_POINT as usize),
             "buffer size is too small for simple_format()");
 
-        let digits = value.digits;
-        let exponent = value.exponent;
+        let decimal = FloatingDecimal::from(decoded);
+        let digits = decimal.digits;
+        let exponent = decimal.exponent;
         debug_assert!(digits >= 1);
         debug_assert!(digits <= 99_999_999_999_999_999_u64);
         debug_assert!(exponent >= -999);
         debug_assert!(exponent <= 999);
 
         self.ptr = self.buffer;
-        self.write_sign(value.sign);
+        self.write_sign(decimal.sign);
 
         let mut num_digits = decimal_length(digits);
         let decimal_point = num_digits as i32 + exponent;
@@ -705,7 +708,7 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
     }
 
     /// Formats `value` into the buffer according the `options`, returns the total length.
-    fn format(&mut self, value: &FloatingDecimal<u64>) -> usize {
+    fn format(&mut self, decoded: Decoded<BitsType>) -> usize {
         assert!(self.size >= max(
             max(24, 20 + Self::MIN_FIXED_DECIMAL_POINT.abs() as usize),
             3 + Self::MAX_FIXED_DECIMAL_POINT as usize),
@@ -713,8 +716,9 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
 
         let forced_fixed = false;   // TODO: from options STD/FIX/...
 
-        let digits = value.digits;
-        let exponent = value.exponent;
+        let decimal = FloatingDecimal::from(decoded);
+        let digits = decimal.digits;
+        let exponent = decimal.exponent;
         debug_assert!(digits >= 1);
         debug_assert!(digits <= 99_999_999_999_999_999_u64);
         debug_assert!(exponent >= -999);
@@ -723,12 +727,12 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
         self.ptr = self.buffer;
         unsafe {
             // writes the sign and advances ptr if necessary
-            self.write_sign(value.sign);
+            self.write_sign(decimal.sign);
 
             // width and precision, subtract 1 from width if option given and sign consumed, and
             // ensure width and precision are not larger than the buffer size allows
             let width = self.options.width
-                .and_then(|width| Some(min(width - value.sign as u32, self.size as u32)));
+                .and_then(|width| Some(min(width - decimal.sign as u32, self.size as u32)));
             let mut precision = self.options.precision
                 .and_then(|prec| Some(min(prec, self.size as u32 - 18)));
 
@@ -931,7 +935,7 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
                         if p > 0 { p as usize + 2 } else { 1 }
                     } else {
                         num_digits + -decimal_point as usize + 2
-                    } + value.sign;
+                    } + decimal.sign;
                     debug_assert!(length <= self.options.width.unwrap_or(u32::MAX) as usize,
                               "length ({}) > width ({:?})", length, self.options.width);
                 } else {
@@ -983,7 +987,7 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
                             } else {
                                 num_digits0
                             }
-                        } + value.sign;
+                        } + decimal.sign;
                     } else {
                         // carry in D-D.d-d case, only occurs when precision == Some(prec):
                         //
@@ -1188,24 +1192,10 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
         }
     }
 
-    /// Converts the given double-precision number into decimal form and stores the result in the given
-    /// buffer.
-    ///
-    /// The output format is similar to `{f}` except when the position of the decimal point is out of
-    /// the boundaries (MIN_FIXED_DECIMAL_POINT and MAX_FIXED_DECIMAL_POINT), in which case the format
-    /// is similar to `{e}`.
-    ///
-    /// The output is optimal, i.e. the output string
-    ///  1. rounds back to the input number when read in (using round-to-nearest-even)
-    ///  2. is as short as possible,
-    ///  3. is as close to the input number as possible.
-    ///
-    /// Note:
-    /// This function may temporarily write up to TO_CHARS_MIN_BUFFER_LEN characters into the buffer.
-    fn to_string(mut self, value: f64) -> String {
+    fn fp_format(&mut self, value: f64) -> usize {
         let v = Decoded::from(value);
         unsafe {
-            let length = match v.encoding() {
+            match v.encoding() {
                 Encoding::NaN => {
                     ptr::copy(b"NaN " as *const u8, self.buffer, 4);
                     3
@@ -1221,17 +1211,45 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
                     if self.options.trailing_dot_zero { 3 } else { 1 }
                 }
                 Encoding::Digits => {
-                    let dec = FloatingDecimal::from(v);
                     if self.options.mode == FmtMode::Simple {
-                        self.simple_format(&dec)
+                        self.simple_format(v)
                     } else {
-                        self.format(&dec)
+                        self.format(v)
                     }
                 }
-            };
+            }
+        }
+    }
+    
+    /// Converts the given double-precision number into decimal form and stores the result in the given
+    /// buffer.
+    ///
+    /// The output format is similar to `{f}` except when the position of the decimal point is out of
+    /// the boundaries (MIN_FIXED_DECIMAL_POINT and MAX_FIXED_DECIMAL_POINT), in which case the format
+    /// is similar to `{e}`.
+    ///
+    /// The output is optimal, i.e. the output string
+    ///  1. rounds back to the input number when read in (using round-to-nearest-even)
+    ///  2. is as short as possible,
+    ///  3. is as close to the input number as possible.
+    ///
+    /// Note:
+    /// This function may temporarily write up to TO_CHARS_MIN_BUFFER_LEN characters into the buffer.
+    fn to_string(mut self, value: f64) -> String {
+        let length = self.fp_format(value);
+        unsafe {
             let bufsize = self.size;
             self.size = 0; // prevents de-allocating twice when dropping
             String::from_raw_parts(self.buffer, length, bufsize)
+        }
+    }
+
+    fn to_str(&mut self, value: f64) -> &str {
+        let length = self.fp_format(value);
+        dbg!(length);
+        unsafe {
+            let v = std::slice::from_raw_parts(self.buffer, length);
+            std::str::from_utf8_unchecked(v)
         }
     }
 }
@@ -1242,7 +1260,7 @@ impl Drop for NumFmtBuffer {
             let layout = Layout::array::<u8>(self.size).expect("could not create layout to deallocate buffer");
             self.size = 0;
             unsafe {
-                alloc::dealloc(self.ptr, layout);
+                alloc::dealloc(self.buffer, layout);
             }
         }
     }
