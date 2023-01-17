@@ -80,9 +80,9 @@ pub trait FPDecoded {
     const EXPONENT_MASK: Self::Item;
     const SIGN_MASK: Self::Item;
     /// Fraction component (significand without its hidden MSB)
-    fn physical_fraction(&self) -> Self::Item;
+    fn get_fraction(&self) -> Self::Item;
     /// Exponent component
-    fn physical_exponent(&self) -> Self::Item;
+    fn get_exponent(&self) -> Self::Item;
     /// Encoding class (zero, finite, inf or nan)
     fn encoding(&self) -> Encoding;
     /// Whether the value is finite in the form `-1 ^ sign * (1.fraction) * 2 ^ (e - 1023)`
@@ -107,12 +107,12 @@ impl FPDecoded for Decoded<BitsType> {
     const SIGN_MASK: Self::Item = (1 as Self::Item) << 63;
 
     /// Fraction component (significand without its hidden MSB)
-    fn physical_fraction(&self) -> Self::Item {
+    fn get_fraction(&self) -> Self::Item {
         self.bits & Self::FRACTION_MASK
     }
 
     /// Exponent component
-    fn physical_exponent(&self) -> Self::Item {
+    fn get_exponent(&self) -> Self::Item {
         (self.bits & Self::EXPONENT_MASK) >> (Self::SIGNIFICAND_SIZE - 1)
     }
 
@@ -170,8 +170,8 @@ struct FloatingDecimal<T> {
 impl From<Decoded<u64>> for FloatingDecimal<u64> {
     /// Builds the decimal representation from extracted IEEE-754 fraction and exponent
     fn from(double: Decoded<u64>) -> Self {
-        let ieee_fraction = double.physical_fraction();
-        let ieee_exponent = double.physical_exponent();
+        let ieee_fraction = double.get_fraction();
+        let ieee_exponent = double.get_exponent();
         let sign = double.sign_bit();
         let c: u64;
         let q: i32;
