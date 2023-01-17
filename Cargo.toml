@@ -6,6 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+ilog = "0.1.4"
+
+[dev-dependencies]
 num = "0.4"
 oorandom = "11"
-ilog = "0.1.4"
