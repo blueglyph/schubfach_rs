@@ -1207,8 +1207,10 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
                     3 + v.sign_bit()
                 }
                 Encoding::Zero => {
-                    ptr::copy(b"0.0 " as *const u8, self.buffer, 4);
-                    if self.options.trailing_dot_zero { 3 } else { 1 }
+                    self.ptr = self.buffer;
+                    self.write_sign(v.sign_bit());
+                    ptr::copy(b"0.0 " as *const u8, self.ptr, 4);
+                    v.sign_bit() + 1 + 2 * usize::from(self.options.trailing_dot_zero)
                 }
                 Encoding::Digits => {
                     if self.options.mode == FmtMode::Simple {

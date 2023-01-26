@@ -62,6 +62,9 @@ impl<T: Zero + Float + FormatInterface + FloatConst> FloatTester for FloatChecke
         if self.v.is_infinite() {
             return self.s == "inf";
         }
+        if self.v.is_zero() {
+            return self.s == "0"
+        }
         if self.v < T::MIN_VALUE {  // TODO: fake, remove
             return false;
         }
@@ -96,14 +99,17 @@ impl FloatConst for f64 {
 
 // ---------------------------------------------------------------------------------------------
 
-fn test_dec<T: Zero + Float + FormatInterface + FloatConst>(x: T) {
+fn test_dec<T: Zero + Float + FormatInterface + FloatConst + Display>(x: T) {
     let mut checker = FloatChecker::new(x);
-    assert!(checker.is_ok());
+    assert!(checker.is_ok(), "{x} didn't pass the test");
 }
 
 #[test]
 fn test_build() {
+    test_dec(-0.0);
     test_dec(f64::NAN);
     test_dec(f64::INFINITY);
     test_dec(f64::NEG_INFINITY);
+    test_dec(0.0);
+    test_dec(-0.0);
 }

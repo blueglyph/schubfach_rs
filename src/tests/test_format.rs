@@ -181,7 +181,7 @@ fn special() {
         (f64::NAN,          None,       None,       Fix,    false,  "NaN"),
         (f64::NEG_INFINITY, None,       None,       Fix,    false,  "-inf"),
         (f64::INFINITY,     None,       None,       Fix,    false,  "inf"),
-        (-0.0,              None,       None,       Fix,    true,   "0.0"),
+        (-0.0,              None,       None,       Fix,    true,   "-0.0"),
         (0.0,               None,       None,       Fix,    false,  "0"),
         (0.0,               None,       None,       Fix,    true,   "0.0"),
         (f64::EPSILON,      None,       None,       Sci,    true,   "2.220446049250313e-16"),
