@@ -1248,7 +1248,6 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
 
     fn to_str(&mut self, value: f64) -> &str {
         let length = self.fp_format(value);
-        dbg!(length);
         unsafe {
             let v = std::slice::from_raw_parts(self.buffer, length);
             std::str::from_utf8_unchecked(v)
