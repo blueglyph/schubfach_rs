@@ -247,7 +247,7 @@ impl FloatConst for f64 {
 // ---------------------------------------------------------------------------------------------
 
 fn test_dec<T: Zero + Float + FormatInterface + FloatConst + Display>(x: T) {
-    let mut checker = FloatChecker::new(x);
+    let checker = FloatChecker::new(x);
     if let Err(msg) = checker.is_ok() {
         panic!("{x} didn't pass the test. Result: '{}', error:'{msg}'", checker.s);
     }
