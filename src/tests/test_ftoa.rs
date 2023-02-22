@@ -23,6 +23,13 @@ fn limits_ftoa() {
     }
 }
 
+#[test]
+fn exponential_ftoa() {
+    println!("{}", 1.25e-20.ftoa());
+    println!("{}", 125.0e-20.ftoa());
+    println!("{}", 1.25e30.ftoa());
+}
+
 /// Timing test, launch with
 ///
 /// ```cargo test -r timing_random_ftoa -- --ignored --test-threads=1 --show-output```
