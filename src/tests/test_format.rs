@@ -306,3 +306,15 @@ fn round() {
         }
     }
 }
+
+#[test]
+fn negative_zero() {
+    let mut options = FmtOptions::default();
+    let mzero = -0.0;
+    let pzero = 0.0;
+    assert_eq!(mzero.format_opt(&options), "-0.0");
+    assert_eq!(pzero.format_opt(&options), "0.0");
+    options.negative_zero = false;
+    assert_eq!(mzero.format_opt(&options), "0.0");
+    assert_eq!(pzero.format_opt(&options), "0.0");
+}

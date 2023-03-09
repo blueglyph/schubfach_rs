@@ -241,14 +241,14 @@ impl From<Decoded<u64>> for FloatingDecimal<u64> {
 
 // ---------------------------------------------------------------------------------------------
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FmtMode {
     Fix,
     Sci,
     Simple
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 /// Formatting options for [NumFmtBuffer] methods
 pub struct FmtOptions {
     /// maximum string length
@@ -257,10 +257,25 @@ pub struct FmtOptions {
     pub precision: Option<u32>,
     /// true: includes ".0" for integer values, false: only includes the integer part
     pub trailing_dot_zero: bool,
+    /// true: negative sign for "-0", false: negative sign only for non-null values
+    pub negative_zero: bool,
     /// true: panics when cannot render value, false: does not panic, may return out-of-spec strings
     pub panic_on_issue: bool,
     /// mode: Fix = fixed, Sci = scientific, Simple: simple format without width/precision
     pub mode: FmtMode
+}
+
+impl FmtOptions {
+    fn simple() -> Self {
+        FmtOptions {
+            width: None,
+            precision: None,
+            trailing_dot_zero: false,
+            negative_zero: true,
+            panic_on_issue: false,
+            mode: FmtMode::Simple,
+        }
+    }
 }
 
 impl Default for FmtOptions {
@@ -269,6 +284,7 @@ impl Default for FmtOptions {
             width: None,
             precision: None,
             trailing_dot_zero: true,
+            negative_zero: true,
             panic_on_issue: false,
             mode: FmtMode::Fix
         }
@@ -1208,9 +1224,13 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
                 }
                 Encoding::Zero => {
                     self.ptr = self.buffer;
-                    self.write_sign(v.sign_bit());
+                    if self.options.negative_zero {
+                        self.write_sign(v.sign_bit());
+                    }
                     ptr::copy(b"0.0 " as *const u8, self.ptr, 4);
-                    v.sign_bit() + 1 + 2 * usize::from(self.options.trailing_dot_zero)
+                    v.sign_bit() * usize::from(self.options.negative_zero)  // -
+                        + 1                                                 // 0
+                        + 2 * usize::from(self.options.trailing_dot_zero)   // .0
                 }
                 Encoding::Digits => {
                     if self.options.mode == FmtMode::Simple {
