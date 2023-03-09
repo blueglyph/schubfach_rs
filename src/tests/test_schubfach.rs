@@ -45,41 +45,11 @@ struct ParseResult {
 }
 
 trait FloatTester {
-    fn is_ok(&self) -> Result<ParseResult, &str>;
     fn parse(&self, string: String) -> Result<ParseResult, &str>;
+    fn is_ok(&self) -> Result<ParseResult, &str>;
 }
 
 impl<T: Zero + Float + FormatInterface + FloatConst> FloatTester for FloatChecker<T> {
-    fn is_ok(&self) -> Result<ParseResult, &str> {
-        let mut s = self.s.clone();
-        let mut v = self.v;
-        if v.is_nan() {
-            if self.s != "NaN" {
-                return Err("expected 'NaN'");
-            }
-        }
-        if v.is_sign_negative() {
-            if s.is_empty() || !s.starts_with('-') {
-                return Err("empty or not starting with '-'");
-            }
-            v = -self.v;
-            s.remove(0);
-        }
-        if v.is_infinite() {
-            if s != "inf" {
-                return Err("expected 'inf' (or '-inf')");
-            }
-        }
-        if v.is_zero() {
-            if s != "0" {
-                return Err("expected '0' (or '-0')");
-            }
-        }
-        let parsed = self.parse(s)?;
-
-        Ok(parsed)
-    }
-
     fn parse(&self, mut string: String) -> Result<ParseResult, &str> {
         let mut result = ParseResult { c: 0, q: 0, len10: 0 };
         string.push('*'); // end delimiter
@@ -218,6 +188,36 @@ impl<T: Zero + Float + FormatInterface + FloatConst> FloatTester for FloatChecke
                 Ok(result)
             }
         }
+    }
+
+    fn is_ok(&self) -> Result<ParseResult, &str> {
+        let mut s = self.s.clone();
+        let mut v = self.v;
+        if v.is_nan() {
+            if self.s != "NaN" {
+                return Err("expected 'NaN'");
+            }
+        }
+        if v.is_sign_negative() {
+            if s.is_empty() || !s.starts_with('-') {
+                return Err("empty or not starting with '-'");
+            }
+            v = -self.v;
+            s.remove(0);
+        }
+        if v.is_infinite() {
+            if s != "inf" {
+                return Err("expected 'inf' (or '-inf')");
+            }
+        }
+        if v.is_zero() {
+            if s != "0" {
+                return Err("expected '0' (or '-0')");
+            }
+        }
+        let parsed = self.parse(s)?;
+
+        Ok(parsed)
     }
 }
 
