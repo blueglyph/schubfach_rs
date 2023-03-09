@@ -7,13 +7,16 @@ use crate::*;
 struct FloatChecker<T> {
     v: T,
     s: String,
+    options: FmtOptions
 }
 
 impl<T: Copy + FormatInterface> FloatChecker<T> {
-    fn new(v: T) -> Self {
+    fn new(v: T, options: Option<FmtOptions>) -> Self {
+        let options = options.unwrap_or(FmtOptions::simple());
         FloatChecker {
             v,
-            s: v.ftoa(),
+            s: v.format_opt(&options), //v.ftoa(),
+            options
         }
     }
 }
@@ -36,8 +39,13 @@ trait FloatConst where Self: Sized {
     const C_TINY: i64;
     const MIN_FIXED_DECIMAL_POINT: isize;
     const MAX_FIXED_DECIMAL_POINT: isize;
+
+    fn max_len10() -> i32 {
+        Self::H
+    }
 }
 
+#[derive(Debug)]
 struct ParseResult {
     c: i64,
     q: i32,
@@ -46,7 +54,7 @@ struct ParseResult {
 
 trait FloatTester {
     fn parse(&self, string: String) -> Result<ParseResult, &str>;
-    fn is_ok(&self) -> Result<ParseResult, &str>;
+    fn is_ok(&self) -> Result<(), String>;
 }
 
 impl<T: Zero + Float + FormatInterface + FloatConst> FloatTester for FloatChecker<T> {
@@ -72,7 +80,7 @@ impl<T: Zero + Float + FormatInterface + FloatConst> FloatTester for FloatChecke
                 p = p.add(1);
             }
             // => p is on the first character after the integer part
-            result.len10 = p.offset_from(s) as i32;
+            result.len10 = p.offset_from(ptr) as i32;
             if result.len10 == 0 {
                 return Err("integer part missing");
             }
@@ -92,9 +100,12 @@ impl<T: Zero + Float + FormatInterface + FloatConst> FloatTester for FloatChecke
                 f = f.add(1);
             }
             // => f is on the first non-zero fraction digit (if any)
-            if result.c == 0 {
-                result.len10 = 0;
-            }
+            result.len10 = if result.c == 0 {
+                0
+            } else {
+                f.offset_from(ptr) as i32
+            };
+
             let mut x = f;
             while (*x).is_ascii_digit() {
                 result.c = result.c.wrapping_mul(10).wrapping_add((*x - b'0') as i64);
@@ -190,34 +201,49 @@ impl<T: Zero + Float + FormatInterface + FloatConst> FloatTester for FloatChecke
         }
     }
 
-    fn is_ok(&self) -> Result<ParseResult, &str> {
+    fn is_ok(&self) -> Result<(), String> {
         let mut s = self.s.clone();
         let mut v = self.v;
         if v.is_nan() {
             if self.s != "NaN" {
-                return Err("expected 'NaN'");
+                return Err("expected 'NaN'".to_string());
             }
+            return Ok(())
         }
-        if v.is_sign_negative() {
+        if v.is_sign_negative() && (!v.is_zero() || self.options.negative_zero) {
             if s.is_empty() || !s.starts_with('-') {
-                return Err("empty or not starting with '-'");
+                return Err("empty or not starting with '-'".to_string());
             }
             v = -self.v;
             s.remove(0);
         }
         if v.is_infinite() {
             if s != "inf" {
-                return Err("expected 'inf' (or '-inf')");
+                return Err("expected 'inf' (or '-inf')".to_string());
             }
+            return Ok(())
         }
         if v.is_zero() {
-            if s != "0" {
-                return Err("expected '0' (or '-0')");
+            match self.options.trailing_dot_zero {
+                true  if s != "0.0" => { return Err("expected '0.0' (or '-0.0')".to_string()); },
+                false if s != "0"   => { return Err("expected '0' (or '-0')".to_string()); },
+                _ => return Ok(())
             }
         }
-        let parsed = self.parse(s)?;
 
-        Ok(parsed)
+        let mut parsed = self.parse(s)?;
+        println!("parsed = {:?}", parsed);
+
+        if parsed.len10 < 2 {
+            parsed.c *= 10;
+            parsed.q -= 1;
+            parsed.len10 += 1;
+        }
+        if parsed.len10 < 2 || T::max_len10() < parsed.len10 {
+            return Err(format!("parsed.len10 = {} out of boundaries (2 .. {})", parsed.len10, T::max_len10()));
+        }
+
+        Ok(())
     }
 }
 
@@ -247,20 +273,21 @@ impl FloatConst for f64 {
 // ---------------------------------------------------------------------------------------------
 
 fn test_dec<T: Zero + Float + FormatInterface + FloatConst + Display>(x: T) {
-    let checker = FloatChecker::new(x);
+    let mut options = FmtOptions::simple();
+    options.trailing_dot_zero = true;
+    let checker = FloatChecker::new(x, Some(options));
     if let Err(msg) = checker.is_ok() {
-        panic!("{x} didn't pass the test. Result: '{}', error:'{msg}'", checker.s);
+        panic!("'{x}' didn't pass the test. Result: '{}', error:'{msg}'", checker.s);
     }
 }
 
 #[test]
-fn test_build() {
-    test_dec(-0.0);
-    test_dec(f64::NAN);
-    test_dec(f64::INFINITY);
+fn test_extreme_values() {
     test_dec(f64::NEG_INFINITY);
     test_dec(0.0);
     test_dec(-0.0);
+    test_dec(f64::INFINITY);
+    test_dec(f64::NAN);
 }
 
 #[test]
