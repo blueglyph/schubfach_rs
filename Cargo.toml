@@ -1,12 +1,19 @@
 [package]
 name = "schubfach"
-version = "0.1.0"
+description = "Schubfach algorithm for floating-point to string conversion"
+version = "0.0.1"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+authors = ["Redglyph"]
+categories = ["value-formatting"]
+keywords = ["float", "ftoa"]
+documentation = "https://docs.rs/schufbach"
+homepage = "https://github.com/blueglyph/schubfach_rs"
+license = "MIT"
+repository = "https://github.com/blueglyph/schubfach_rs"
+readme = "README.md"
 
 [dependencies]
-ilog = "0.1.4"
+ilog = "1"
 
 [dev-dependencies]
 num = "0.4"
