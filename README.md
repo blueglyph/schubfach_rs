@@ -30,6 +30,7 @@ Current features:
 
 Planned features:
 - engineering format
+- support for f32 values
 
 ## References
 
