@@ -262,7 +262,7 @@ impl FloatConst for f64 {
     const K_MIN: i32 = -324;
     const K_MAX: i32 = 292;
     const H: i32 = 17;
-    const MIN_VALUE: f64 = 4.9E-324;
+    const MIN_VALUE: f64 = 4.9E-324;    // replace with f64::from_bits(0x0000000000000001) when const stable
     const MIN_NORMAL: f64 = 2.2250738585072014E-308;
     const MAX_VALUE: f64 = 1.7976931348623157E308;
     const E_MIN: i32 = -323;
@@ -288,25 +288,9 @@ fn test_dec<T: Zero + Float + FormatInterface + FloatConst + Display + LowerExp>
 fn test_extreme_values() {
     assert_eq!(f64::MIN_VALUE, f64::from_bits(0x0000000000000001));
 
-    test_dec(0.001953125);
-    test_dec(10.0 * f64::MIN_VALUE);
-    test_dec(f64::MIN_VALUE);
-    test_dec(0.001953125);
-    test_dec(1.0);
-    test_dec(10.0);
-return;
     test_dec(f64::NEG_INFINITY);
     test_dec(-f64::MAX_VALUE);
     test_dec(-f64::MIN_NORMAL);
-    // let m_min_value_bits = (-f64::MIN_VALUE).to_bits();
-    // let p_min_value_bits = f64::MIN_VALUE.to_bits();
-    // println!("-MIN_VALUE = {:e}  ->  0x{:016x}", -f64::MIN_VALUE, m_min_value_bits);
-    // println!("MIN_VALUE = {:e}  ->  0x{:016x}", f64::MIN_VALUE, p_min_value_bits);
-    // let m_min_value = f64::from_bits(0x8000000000000001);
-    // let p_min_value = f64::from_bits(0x0000000000000001);
-    // println!("-MIN_VALUE = {:e}  ->  0x{:016x}", m_min_value, m_min_value.to_bits());
-    // println!("MIN_VALUE = {:e}  ->  0x{:016x}", p_min_value, p_min_value.to_bits());
-    println!("MIN_VALUE = {}", f64::MIN_VALUE.ftoa());
     test_dec(-f64::MIN_VALUE);
     test_dec(-0.0);
     test_dec(0.0);
