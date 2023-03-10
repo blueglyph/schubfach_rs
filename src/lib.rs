@@ -73,6 +73,7 @@ pub trait FPDecoded {
     const MAX_DIGITS_10: i32 = 53;
     const MAX_EXPONENT: i32 = 1024;
     const SIGNIFICAND_SIZE: i32 = Self::MAX_DIGITS_10;
+    const C_TINY: u64 = 3;
     const EXPONENT_BIAS: i32 = Self::MAX_EXPONENT - 1 + (Self::SIGNIFICAND_SIZE - 1);
     const MAX_IEEE_EXPONENT: Self::Item;
     const HIDDEN_BIT: Self::Item;
@@ -175,20 +176,24 @@ impl From<Decoded<u64>> for FloatingDecimal<u64> {
         let sign = double.sign_bit();
         let c: u64;
         let q: i32;
+        let dk: i32;
         if ieee_exponent != 0 {
+            dk = 0;
             c = Decoded::<u64>::HIDDEN_BIT | ieee_fraction;
             q = ieee_exponent as i32 - Decoded::<u64>::EXPONENT_BIAS;
-            if 0 <= -q && -q < Decoded::<u64>::SIGNIFICAND_SIZE && multiple_of_pow2(c, -q) {
+            if 0 < -q && -q < Decoded::<u64>::SIGNIFICAND_SIZE && multiple_of_pow2(c, -q) {
                 return FloatingDecimal { digits: c >> -q, exponent: 0, sign };
             }
         } else {
-            c = ieee_fraction;
+            if ieee_fraction < Decoded::<u64>::C_TINY {
+                dk = -1;
+                c = ieee_fraction * 10;
+            } else {
+                dk = 0;
+                c = ieee_fraction;
+            }
             q = 1 - Decoded::<u64>::EXPONENT_BIAS;
         }
-
-        let is_even: bool = c % 2 == 0;
-        let accept_lower = is_even;
-        let accept_upper = is_even;
 
         let lower_boundary_is_closer: bool = ieee_fraction == 0 && ieee_exponent > 1;
 
@@ -208,34 +213,78 @@ impl From<Decoded<u64>> for FloatingDecimal<u64> {
         let vb: u64  = round_to_odd(pow10, cb  << h);
         let vbr: u64 = round_to_odd(pow10, cbr << h);
 
-        let lower: u64 = vbl + u64::from(!accept_lower);
-        let upper: u64 = vbr - u64::from(!accept_upper);
-
-        // See Figure 4 in [1].
-        // And the modifications in Figure 6.
-
         let s: u64 = vb / 4; // NB: 4 * s == vb & ~3 == vb & -4
 
-        if s >= 10 { // vb >= 40
-            let sp: u64 = s / 10; // = vb / 40
-            let up_inside: bool = lower <= 40 * sp;
-            let wp_inside: bool =          40 * sp + 40 <= upper;
-            if up_inside != wp_inside {
-                return FloatingDecimal { digits: sp + u64::from(wp_inside), exponent: k + 1, sign };
+        let out = c & 1;
+        if s >= 100 {
+            // s' = floor(s / 10)
+            // sp10 = 10 s'
+            // tp10 = 10 t'
+            // upin    iff    u' = sp10 10^k in Rv
+            // wpin    iff    w' = tp10 10^k in Rv
+            // See section 9.4 of [1].
+            let sp10 = (s / 10) * 10;
+            let tp10 = sp10 + 10;
+            let upin = vbl + out <= sp10 << 2;
+            let wpin = (tp10 << 2) + out <= vbr;
+            if upin != wpin {
+                return FloatingDecimal { digits: if upin { sp10 } else { tp10 }, exponent: k, sign };
             }
         }
-
-        let u_inside: bool = lower <= 4 * s;
-        let w_inside: bool =          4 * s + 4 <= upper;
-        if u_inside != w_inside {
-            return FloatingDecimal { digits: s + u64::from(w_inside), exponent: k, sign };
+        // 10 <= s < 100    or    s >= 100  and  u', w' not in Rv
+        // uin    iff    u = s 10^k in Rv
+        // win    iff    w = t 10^k in Rv
+        // See section 9.4 of [1].
+        let t = s + 1;
+        let uin = vbl + out <= s << 2;
+        let win = (t << 2) + out <= vbr;
+        if uin != win {
+            // Exactly one of u or w lies in Rv.
+            return FloatingDecimal { digits: if uin { s } else { t }, exponent: k + dk, sign };
         }
-
-        // NB: s & 1 == vb & 0x4
+        // Both u and w lie in Rv: determine the one closest to v.
+        // See section 9.4 of [1].
+        // let cmp: i64 = vb - ((s + t) << 1);
         let mid: u64 = 4 * s + 2; // = 2(s + t)
         let round_up: bool = vb > mid || (vb == mid && (s & 1) != 0);
 
-        FloatingDecimal { digits: s + u64::from(round_up), exponent: k, sign }
+        FloatingDecimal { digits: s + u64::from(round_up), exponent: k + dk, sign }
+
+        /* Code from C++ code, replaced by original algorithm above for small values
+
+            let is_even: bool = c % 2 == 0;
+            let accept_lower = is_even;
+            let accept_upper = is_even;
+
+            let lower: u64 = vbl + u64::from(!accept_lower);
+            let upper: u64 = vbr - u64::from(!accept_upper);
+
+            // See Figure 4 in [1].
+            // And the modifications in Figure 6.
+
+            let s: u64 = vb / 4; // NB: 4 * s == vb & ~3 == vb & -4
+
+            if s >= 10 { // vb >= 40
+                let sp: u64 = s / 10; // = vb / 40
+                let up_inside: bool = lower <= 40 * sp;
+                let wp_inside: bool =          40 * sp + 40 <= upper;
+                if up_inside != wp_inside {
+                    return FloatingDecimal { digits: sp + u64::from(wp_inside), exponent: k + 1, sign };
+                }
+            }
+
+            let u_inside: bool = lower <= 4 * s;
+            let w_inside: bool =          4 * s + 4 <= upper;
+            if u_inside != w_inside {
+                return FloatingDecimal { digits: s + u64::from(w_inside), exponent: k, sign };
+            }
+
+            // NB: s & 1 == vb & 0x4
+            let mid: u64 = 4 * s + 2; // = 2(s + t)
+            let round_up: bool = vb > mid || (vb == mid && (s & 1) != 0);
+
+            FloatingDecimal { digits: s + u64::from(round_up), exponent: k, sign }
+        */
     }
 }
 
