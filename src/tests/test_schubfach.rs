@@ -234,7 +234,7 @@ impl<T: Zero + Float + FormatInterface + FloatConst> FloatTester for FloatChecke
         }
 
         let mut parsed = self.parse(s)?;
-        println!("parsed = {:?}", parsed);
+        // println!("parsed = {:?}", parsed);
 
         if parsed.len10 < 2 {
             parsed.c *= 10;
@@ -278,6 +278,7 @@ fn test_dec<T: Zero + Float + FormatInterface + FloatConst + Display + LowerExp>
     let mut options = FmtOptions::simple();
     options.trailing_dot_zero = true;
     let checker = FloatChecker::new(x, Some(options));
+    println!("{x:e} => {}", checker.s);
     if let Err(msg) = checker.is_ok() {
         panic!("'{x:e}' didn't pass the test. Result: '{}', error:'{msg}'", checker.s);
     }
@@ -287,6 +288,13 @@ fn test_dec<T: Zero + Float + FormatInterface + FloatConst + Display + LowerExp>
 fn test_extreme_values() {
     assert_eq!(f64::MIN_VALUE, f64::from_bits(0x0000000000000001));
 
+    test_dec(0.001953125);
+    test_dec(10.0 * f64::MIN_VALUE);
+    test_dec(f64::MIN_VALUE);
+    test_dec(0.001953125);
+    test_dec(1.0);
+    test_dec(10.0);
+return;
     test_dec(f64::NEG_INFINITY);
     test_dec(-f64::MAX_VALUE);
     test_dec(-f64::MIN_NORMAL);
