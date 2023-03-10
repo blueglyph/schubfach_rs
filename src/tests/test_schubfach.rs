@@ -1,5 +1,6 @@
 // Copyright 2022 Redglyph
 
+use std::fmt::LowerExp;
 use num::{Float, Zero};
 use crate::*;
 
@@ -103,7 +104,7 @@ impl<T: Zero + Float + FormatInterface + FloatConst> FloatTester for FloatChecke
             result.len10 = if result.c == 0 {
                 0
             } else {
-                f.offset_from(ptr) as i32
+                f.offset_from(ptr) as i32 - 1
             };
 
             let mut x = f;
@@ -121,12 +122,13 @@ impl<T: Zero + Float + FormatInterface + FloatConst> FloatTester for FloatChecke
             if x == fz {
                 return Err("fractional part missing")
             }
+            result.len10 += x.offset_from(f) as i32;
             let mut g = x;
             if *g == b'e' || *g == b'E' {
                 g = g.add(1);
             }
             // => g is after the exponent 'e' indicator (if any)
-            let mut ez = x;
+            let mut ez = g;
             if *ez == b'-' {
                 ez = ez.add(1);
             }
@@ -272,33 +274,38 @@ impl FloatConst for f64 {
 
 // ---------------------------------------------------------------------------------------------
 
-fn test_dec<T: Zero + Float + FormatInterface + FloatConst + Display>(x: T) {
+fn test_dec<T: Zero + Float + FormatInterface + FloatConst + Display + LowerExp>(x: T) {
     let mut options = FmtOptions::simple();
     options.trailing_dot_zero = true;
     let checker = FloatChecker::new(x, Some(options));
     if let Err(msg) = checker.is_ok() {
-        panic!("'{x}' didn't pass the test. Result: '{}', error:'{msg}'", checker.s);
+        panic!("'{x:e}' didn't pass the test. Result: '{}', error:'{msg}'", checker.s);
     }
 }
 
 #[test]
 fn test_extreme_values() {
+    assert_eq!(f64::MIN_VALUE, f64::from_bits(0x0000000000000001));
+
     test_dec(f64::NEG_INFINITY);
-    test_dec(0.0);
+    test_dec(-f64::MAX_VALUE);
+    test_dec(-f64::MIN_NORMAL);
+    // let m_min_value_bits = (-f64::MIN_VALUE).to_bits();
+    // let p_min_value_bits = f64::MIN_VALUE.to_bits();
+    // println!("-MIN_VALUE = {:e}  ->  0x{:016x}", -f64::MIN_VALUE, m_min_value_bits);
+    // println!("MIN_VALUE = {:e}  ->  0x{:016x}", f64::MIN_VALUE, p_min_value_bits);
+    // let m_min_value = f64::from_bits(0x8000000000000001);
+    // let p_min_value = f64::from_bits(0x0000000000000001);
+    // println!("-MIN_VALUE = {:e}  ->  0x{:016x}", m_min_value, m_min_value.to_bits());
+    // println!("MIN_VALUE = {:e}  ->  0x{:016x}", p_min_value, p_min_value.to_bits());
+    println!("MIN_VALUE = {}", f64::MIN_VALUE.ftoa());
+    test_dec(-f64::MIN_VALUE);
     test_dec(-0.0);
+    test_dec(0.0);
+    test_dec(f64::MIN_VALUE);
+    test_dec(f64::MIN_NORMAL);
+    test_dec(f64::MAX_VALUE);
     test_dec(f64::INFINITY);
     test_dec(f64::NAN);
 }
 
-#[test]
-fn test_2() {
-    for i in 0..10 {
-        print!("{i} ");
-        match () {
-            _ if i < 3 => println!("< 3"),
-            _ if i < 7 => println!("< 7"),
-            _ if i < 9 => println!("< 9"),
-            _ => {}
-        }
-    }
-}

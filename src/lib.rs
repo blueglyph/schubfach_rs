@@ -691,6 +691,10 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
             if num_digits == 1 {
                 // dE+123
                 self.ptr = self.ptr.add(1);
+                if self.options.trailing_dot_zero {
+                    ptr::copy(b".0" as *const u8, self.ptr, 2);
+                    self.ptr = self.ptr.add(2);
+                }
             } else {
                 // d.igitsE+123
                 *self.ptr.add(1) = b'.';
