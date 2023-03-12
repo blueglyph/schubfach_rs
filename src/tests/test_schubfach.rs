@@ -1,6 +1,7 @@
 // Copyright 2022 Redglyph
 
 use std::fmt::LowerExp;
+use std::str::FromStr;
 use ibig::{ibig, IBig};
 use num::{Float, Zero};
 use crate::*;
@@ -65,7 +66,7 @@ trait FloatTester {
 }
 
 impl<T> FloatTester for FloatChecker<T>
-    where T: Zero + Float + FormatInterface + FloatConst + From<f64>
+    where T: Zero + Float + FormatInterface + FloatConst + From<f64> + FromStr
 {
     fn parse(&self, mut string: String) -> Result<ParseResult, &str> {
         let mut result = ParseResult { c: 0, q: 0, len10: 0 };
@@ -247,6 +248,15 @@ impl<T> FloatTester for FloatChecker<T>
 
 
     fn is_ok(&self) -> Result<(), String> {
+        // tests that parsing the generated string yields the original value
+        match self.s.parse::<T>() {
+            Ok(recovered) => if recovered != self.v {
+                return Err(format!("string '{}' does not recover original value", self.s));
+            }
+            Err(_) => return Err(format!("Error when parsing string to float")),
+        }
+
+        // parses the string to verify its format
         let mut s = self.s.clone();
         let mut v = self.v;
         if v.is_nan() {
@@ -412,7 +422,7 @@ fn test_checker() {
 // ---------------------------------------------------------------------------------------------
 
 fn test_dec<T>(x: T)
-    where T: Zero + Float + FormatInterface + FloatConst + Display + LowerExp + From<f64>
+    where T: Zero + Float + FormatInterface + FloatConst + Display + LowerExp + From<f64> + FromStr
 {
     let mut options = FmtOptions::simple();
     options.trailing_dot_zero = true;
