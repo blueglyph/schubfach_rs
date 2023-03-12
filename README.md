@@ -17,7 +17,7 @@ It is performant and has a relatively small footprint. For performance compariso
 
 **WARNING! This is very much work-in-progress.** 
 
-The code is functional but must still be more thoroughly tested and optimized. The API is not considered as definitive yet, not is the code architecture.
+The code is functional but must still be more thoroughly tested and optimized. The API is not considered as definitive yet, nor is the code architecture.
 
 Current features:
 - double-precision values (f64) are supported

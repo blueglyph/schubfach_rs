@@ -600,8 +600,8 @@ impl NumFmtBuffer {
 }
 
 pub trait NumFormat<F, U> {
-    const MIN_FIXED_DECIMAL_POINT: i32 = -6; // 0.000000[17 digits] -> fixed, more zeros -> scientific
-    const MAX_FIXED_DECIMAL_POINT: i32 = 23; // [17 digits]000000.0 -> fixed, more digits -> scientific
+    const MIN_FIXED_DECIMAL_POINT: i32 = -3; // 0.000[17 digits] -> fixed, more zeros -> scientific
+    const MAX_FIXED_DECIMAL_POINT: i32 = 20; // [17 digits].0 -> fixed, more digits -> scientific
 
     unsafe fn simple_format(&mut self, decoded: Decoded<U>) -> usize;
     fn format(&mut self, decoded: Decoded<U>) -> usize;

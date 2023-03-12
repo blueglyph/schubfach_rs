@@ -18,3 +18,4 @@ ilog = "1"
 [dev-dependencies]
 num = "0.4"
 oorandom = "11"
+ibig = "0.3"
