@@ -248,14 +248,6 @@ impl<T> FloatTester for FloatChecker<T>
 
 
     fn is_ok(&self) -> Result<(), String> {
-        // tests that parsing the generated string yields the original value
-        match self.s.parse::<T>() {
-            Ok(recovered) => if recovered != self.v {
-                return Err(format!("string '{}' does not recover original value", self.s));
-            }
-            Err(_) => return Err(format!("Error when parsing string to float")),
-        }
-
         // parses the string to verify its format
         let mut s = self.s.clone();
         let mut v = self.v;
@@ -284,6 +276,14 @@ impl<T> FloatTester for FloatChecker<T>
                 false if s != "0" => { Err("expected '0' (or '-0')".to_string()) },
                 _ => Ok(())
             }
+        }
+
+        // tests that parsing the generated string yields the original value
+        match self.s.parse::<T>() {
+            Ok(recovered) => if recovered != self.v {
+                return Err(format!("string '{}' does not recover original value", self.s));
+            }
+            Err(_) => return Err(format!("Error when parsing string to float")),
         }
 
         let mut parsed = self.parse(s)?;

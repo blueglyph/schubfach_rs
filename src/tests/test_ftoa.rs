@@ -5,20 +5,27 @@ use std::mem;
 use std::str::FromStr;
 use std::time::Instant;
 use num::ToPrimitive;
-use crate::FormatInterface;
+use crate::{FormatInterface, NumFmtBuffer, NumFormat};
 
 #[test]
 fn limits_ftoa() {
+    let min = <NumFmtBuffer as NumFormat<f64, u64>>::MIN_FIXED_DECIMAL_POINT.abs() as usize;
+    let max = <NumFmtBuffer as NumFormat<f64, u64>>::MAX_FIXED_DECIMAL_POINT as usize;
+    let s_min = "0.".to_string() + &"0".repeat(min) + "2";
+    let s_min_out = format!("2e-{}", min + 2);
+    let s_max = "1".to_string() + &"0".repeat(max - 1);
+    let s_max_out = format!("1e{}", max + 1);
     let tests: &[(f64, &str)] = &[
         // those tests depend on the value of FPFormatter::MIN_FIXED_DECIMAL_POINT
-        (0.0000002, "0.0000002"),
-        (0.00000002, "2e-8"),
+        (s_min.parse().unwrap(), &s_min),
+        (s_min_out.parse().unwrap(), &s_min_out),
         // those tests depend on the value of FPFormatter::MAX_FIXED_DECIMAL_POINT
-        (18014398509481984000000.0, "18014398509481984000000"), // = (1 << 54) * 1E6
-        (180143985094819840000000.0, "1.8014398509481984e23"),  // = (1 << 54) * 1E7
+        (s_max.parse().unwrap(), &s_max),
+        (s_max_out.parse().unwrap(), &s_max_out),
     ];
     for (idx, (value, exp)) in tests.into_iter().enumerate() {
         let res = value.ftoa();
+        println!("value = {}  exp = {} res = {}", value, exp, res);
         assert_eq!(res, *exp, "failed in test #{idx}");
     }
 }
