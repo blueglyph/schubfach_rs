@@ -319,12 +319,6 @@ impl<T> FloatTester for FloatChecker<T>
         }
 
         if parsed.len10 > 2 {
-            // let mut p = parsed.clone();
-            // while p.c % 10 == 0 {
-            //     p.c /= 10;
-            //     p.q += 1;
-            //     p.len10 -= 1;
-            // }
             let low = big_decimal_from(parsed.c as u64 / 10, -parsed.q - 1);
             if self.recovers(&low) {
                 return Err(format!("recovers with shorter, lower value ({}), c = {}, q = {}", &low, parsed.c, parsed.q));
@@ -334,73 +328,6 @@ impl<T> FloatTester for FloatChecker<T>
                 return Err(format!("recovers with shorter, higher value ({}), c = {}, q = {}", &high, parsed.c, parsed.q));
             }
         }
-
-        let dp = if parsed.c == 10 {
-            big_decimal_from(99, -parsed.q + 1)
-        } else {
-            big_decimal_from(parsed.c as u64 - 1, -parsed.q)
-        };
-
-        println!(" -> {:?}", parsed);
-        if self.recovers(&dp) {
-            let bv = match BigDecimal::try_from(self.v) {
-                Ok(big) => big,
-                Err(_) => panic!("could not convert {} to big decimal", self.v)
-            };
-            let deltav = &bv - big_decimal_from(parsed.c as u64, -parsed.q);
-            if !deltav.is_negative() {
-                return Ok(())
-            }
-            let delta = &dp - &bv;
-            if !delta.is_negative() {
-                return Err(format!("delta >= 0: dp - bv = {} - {} = {}", dp, bv, delta));
-            }
-            let cmp = deltav.cmp(&delta);
-            if cmp.is_gt() || (cmp.is_eq() && parsed.c & 1 == 0) {
-                return Ok(())
-            } else {
-                return Err(format!("comparison fails between delta ({}) <> deltav ({}) with c = {}",
-                    delta, deltav, parsed.c
-                ));
-            }
-        }
-
-/*
-        // Try with the decimal predecessor...
-        BigDecimal dp = c == 10 ?
-                BigDecimal.valueOf(99, -q + 1) :
-                BigDecimal.valueOf(c - 1, -q);
-        if (recovers(dp)) {
-            BigDecimal bv = toBigDecimal();
-            BigDecimal deltav = bv.subtract(BigDecimal.valueOf(c, -q));
-            if (deltav.signum() >= 0) {
-                return true;
-            }
-            BigDecimal delta = dp.subtract(bv);
-            if (delta.signum() >= 0) {
-                return false;
-            }
-            int cmp = deltav.compareTo(delta);
-            return cmp > 0 || cmp == 0 && (c & 0x1) == 0;
-        }
-
-        // ... and with the decimal successor
-        BigDecimal ds = BigDecimal.valueOf(c + 1, -q);
-        if (recovers(ds)) {
-            BigDecimal bv = toBigDecimal();
-            BigDecimal deltav = bv.subtract(BigDecimal.valueOf(c, -q));
-            if (deltav.signum() <= 0) {
-                return true;
-            }
-            BigDecimal delta = ds.subtract(bv);
-            if (delta.signum() <= 0) {
-                return false;
-            }
-            int cmp = deltav.compareTo(delta);
-            return cmp < 0 || cmp == 0 && (c & 0x1) == 0;
-        }
-
-*/
         Ok(())
     }
 }
