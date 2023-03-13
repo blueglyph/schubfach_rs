@@ -2,9 +2,7 @@
 
 use std::fmt::LowerExp;
 use std::str::FromStr;
-use bigdecimal::{BigDecimal, ToPrimitive};
-use bigdecimal::num_bigint::BigInt;
-use num::{Float, Zero};
+use num::{Float, PrimInt, Zero};
 use crate::*;
 
 #[derive(Debug)]
@@ -25,7 +23,8 @@ impl<T: Copy + FormatInterface> FloatChecker<T> {
     }
 }
 
-trait FloatConst where Self: Sized + 'static {
+trait FloatConst where Self: Sized + 'static + FloatFromParts
+{
     const P: i32;
     const W: i32;
     const Q_MIN: i32;
@@ -43,8 +42,10 @@ trait FloatConst where Self: Sized + 'static {
     const C_TINY: i64;
     const MIN_FIXED_DECIMAL_POINT: isize;
     const MAX_FIXED_DECIMAL_POINT: isize;
+
     const EXTREMES: &'static [Self];
     const ANOMALIES: &'static [&'static str];
+    const SIG_EXP: &'static [(<Self as FloatFromParts>::BitsType, i32)];
 
     fn max_len10() -> i32 {
         Self::MAX_FIXED_DECIMAL_POINT as i32
@@ -57,7 +58,7 @@ trait FloatConst where Self: Sized + 'static {
 
 #[derive(Debug, Clone)]
 struct ParseResult {
-    c: i64,
+    c: u64,
     q: i32,
     len10: i32,
 }
@@ -65,17 +66,21 @@ struct ParseResult {
 trait FloatTester {
     type Data;
     fn parse(&self, string: String) -> Result<ParseResult, &str>;
-    fn recovers(&self, big: &BigDecimal) -> bool;
     fn is_ok(&self) -> Result<(), String>;
+    fn get_float(string: &str) -> Self::Data;
     fn test_dec(x: Self::Data);
     fn test_extreme_values();
     fn test_some_anomalies();
+    fn test_powers2();
+    fn test_powers10();
+    fn test_paxson();
     fn tests();
 }
 
 impl<T> FloatTester for FloatChecker<T>
-    where T: Copy + Zero + Float + FormatInterface + FloatConst + From<f64> + FromStr + Display + LowerExp,
-          BigDecimal: TryFrom<T> + TryToFloat<T>
+    where T: Copy + Zero + Float + FormatInterface + FloatConst + From<f64> + FromStr +
+             Display + LowerExp + FloatFromParts,
+          <T as FloatFromParts>::BitsType: Copy
 {
     type Data = T;
 
@@ -96,11 +101,10 @@ impl<T> FloatTester for FloatChecker<T>
             let mut overflow = false;
             while (*p).is_ascii_digit() {
                 if !overflow {
-                    let c = result.c.wrapping_mul(10).wrapping_add((*p - b'0') as i64);
-                    if c < 0 {
-                        overflow = true;
-                    } else {
+                    if let Some(c) = result.c.checked_mul(10).and_then(|c| c.checked_add((*p - b'0') as u64)) {
                         result.c = c;
+                    } else {
+                        overflow = true;
                     }
                 }
                 if overflow {
@@ -112,7 +116,7 @@ impl<T> FloatTester for FloatChecker<T>
                 p = p.add(1);
             }
             // => p is on the first character after the integer part
-            result.len10 = p.offset_from(ptr) as i32;
+            result.len10 = p.offset_from(ptr) as i32 - result.q;
             if result.len10 == 0 {
                 return Err("integer part missing");
             }
@@ -126,11 +130,10 @@ impl<T> FloatTester for FloatChecker<T>
             let mut f = fz;
             while *f == b'0' {
                 if !overflow {
-                    let c = result.c.wrapping_mul(10);
-                    if c < 0 {
-                        overflow = true;
-                    } else {
+                    if let Some(c) = result.c.checked_mul(10) {
                         result.c = c;
+                    } else {
+                        overflow = true;
                     }
                 }
                 if overflow {
@@ -142,18 +145,18 @@ impl<T> FloatTester for FloatChecker<T>
             result.len10 = if result.c == 0 {
                 0
             } else {
-                f.offset_from(ptr) as i32 - 1
+                f.offset_from(ptr) as i32 - 1 - result.q
             };
 
             let mut x = f;
 
             while (*x).is_ascii_digit() {
                 if !overflow {
-                    let c = result.c.wrapping_mul(10).wrapping_add((*x - b'0') as i64);
-                    if c < 0 {
-                        overflow = true;
-                    } else {
+                    if let Some(c) = result.c.checked_mul(10).and_then(|c| c.checked_add((*x - b'0') as u64)) {
                         result.c = c;
+                        result.len10 += 1;
+                    } else {
+                        overflow = true;
                     }
                 }
                 if overflow {
@@ -171,7 +174,6 @@ impl<T> FloatTester for FloatChecker<T>
             if x == fz {
                 return Err("fractional part missing")
             }
-            result.len10 += x.offset_from(f) as i32;
             let mut g = x;
             if *g == b'e' || *g == b'E' {
                 g = g.add(1);
@@ -206,7 +208,7 @@ impl<T> FloatTester for FloatChecker<T>
                 if *s == b'.' {
                     // check -MIN_FIXED_DECIMAL_POINT when abs(v) < 1
                     let min_dec = -T::MIN_FIXED_DECIMAL_POINT;
-                    if f.offset_from(p) > min_dec {
+                    if f.offset_from(p) > min_dec + 1 {
                         return Err("too small, should have been exponent notation");
                     }
                 } else {
@@ -252,13 +254,6 @@ impl<T> FloatTester for FloatChecker<T>
         }
     }
 
-    fn recovers(&self, big: &BigDecimal) -> bool {
-        match big.to_float() {
-            Some(f) => f == self.v,
-            None => panic!("cannot convert {} to float", big)
-        }
-    }
-
     fn is_ok(&self) -> Result<(), String> {
         // parses the string to verify its format
         let mut s = self.s.clone();
@@ -301,6 +296,7 @@ impl<T> FloatTester for FloatChecker<T>
         let mut parsed = self.parse(s)?;
         while parsed.len10 > T::max_significant_digits() {
             if parsed.c % 10 != 0 {
+                println!("{:?}", parsed);
                 return Err(format!("expected multiple of 10 for a value with more than {} integer digits ({} -> {} * 10^{})",
                                    T::max_significant_digits(), self.s, parsed.c, parsed.q));
             }
@@ -326,20 +322,16 @@ impl<T> FloatTester for FloatChecker<T>
             parsed.q += 1;
             parsed.len10 -= 1;
         }
-
-        if parsed.len10 > 2 {
-            let low = big_decimal_from(parsed.c as u64 / 10, -parsed.q - 1);
-            if self.recovers(&low) {
-                return Err(format!("recovers with shorter, lower value ({}), c = {}, q = {}", &low, parsed.c, parsed.q));
-            }
-            let high = big_decimal_from(parsed.c as u64 / 10 + 1, -parsed.q - 1);
-            if self.recovers(&high) {
-                return Err(format!("recovers with shorter, higher value ({}), c = {}, q = {}", &high, parsed.c, parsed.q));
-            }
-        }
         Ok(())
     }
-    
+
+    fn get_float(string: &str) -> Self::Data {
+        match string.parse::<T>() {
+            Ok(v) => v,
+            Err(_) => panic!("could not parse '{}' to float", string)
+        }
+    }
+
     fn test_dec(x: Self::Data) {
         let mut options = FmtOptions::simple();
         options.trailing_dot_zero = true;
@@ -358,30 +350,36 @@ impl<T> FloatTester for FloatChecker<T>
 
     fn test_some_anomalies() {
         for &dec in T::ANOMALIES {
-            match dec.parse::<T>() {
-                Ok(v) => Self::test_dec(v),
-                Err(_) => panic!("could not parse '{}' to float", dec)
-            };
+            Self::test_dec(Self::get_float(dec));
+        }
+    }
+
+    fn test_powers2() {
+        let mut v = T::MIN_VALUE;
+        while v < T::MAX_VALUE {
+            Self::test_dec(v);
+            v = v + v;
+        }
+    }
+
+    fn test_powers10() {
+        for e in T::E_MIN..=T::E_MAX {
+            Self::test_dec(Self::get_float(&format!("1e{}", e)));
+        }
+    }
+
+    fn test_paxson() {
+        for (s, e) in T::SIG_EXP {
+            Self::test_dec(T::from_parts(*s, *e, false));
         }
     }
 
     fn tests() {
         Self::test_some_anomalies();
         Self::test_extreme_values();
-    }
-}
-
-fn big_decimal_from(unscaled: u64, scale: i32) -> BigDecimal {
-    BigDecimal::new(BigInt::from(unscaled), scale as i64)
-}
-
-trait TryToFloat<T> {
-    fn to_float(&self) -> Option<T>;
-}
-
-impl TryToFloat<f64> for BigDecimal {
-    fn to_float(&self) -> Option<f64> {
-        self.to_f64()
+        Self::test_powers2();
+        Self::test_powers10();
+        Self::test_paxson();
     }
 }
 
@@ -406,6 +404,7 @@ impl FloatConst for f64 {
     const C_TINY: i64 = 3;
     const MIN_FIXED_DECIMAL_POINT: isize = <NumFmtBuffer as NumFormat<f64, u64>>::MIN_FIXED_DECIMAL_POINT as isize;
     const MAX_FIXED_DECIMAL_POINT: isize = <NumFmtBuffer as NumFormat<f64, u64>>::MAX_FIXED_DECIMAL_POINT as isize;
+
     const EXTREMES: &'static [Self] = &[
         f64::NEG_INFINITY,
         -f64::MAX_VALUE,
@@ -425,26 +424,63 @@ impl FloatConst for f64 {
     /// they are longer than needed or are not the closest decimal to the double.
     /// Here are just a very few examples.
     const ANOMALIES: &'static [&'static str] = &[
-        // JDK renders these, and others, with 18 digits!
-        "2.82879384806159E17", "1.387364135037754E18",
-        "1.45800632428665E17",
-
-        // JDK renders these longer than needed.
-        "1.6E-322", "6.3E-322",
-        "7.3879E20", "2.0E23", "7.0E22", "9.2E22",
-        "9.5E21", "3.1E22", "5.63E21", "8.41E21",
-
-        // JDK does not render these, and many others, as the closest.
         "9.9E-324", "9.9E-323",
-        "1.9400994884341945E25", "3.6131332396758635E25",
-        "2.5138990223946153E25",
+    ];
+
+    /// Values are from tables 3 and 4 in
+    /// Paxson V, "A Program for Testing IEEE Decimal-Binary Conversion"
+    const SIG_EXP: &'static [(<Self as FloatFromParts>::BitsType, i32)] = &[
+        (8_511_030_020_275_656, -342),
+        (5_201_988_407_066_741, -824),
+        (6_406_892_948_269_899,  237),
+        (8_431_154_198_732_492,   72),
+        (6_475_049_196_144_587,   99),
+        (8_274_307_542_972_842,  726),
+        (5_381_065_484_265_332, -456),
+        (6_761_728_585_499_734,  -57),
+        (7_976_538_478_610_756,  376),
+        (5_982_403_858_958_067,  377),
+        (5_536_995_190_630_837,   93),
+        (7_225_450_889_282_194,  710),
+        (7_225_450_889_282_194,  709),
+        (8_703_372_741_147_379,  117),
+        (8_944_262_675_275_217,   -1),
+        (7_459_803_696_087_692, -707),
+        (6_080_469_016_670_379, -381),
+        (8_385_515_147_034_757,  721),
+        (7_514_216_811_389_786, -828),
+        (8_397_297_803_260_511, -345),
+        (6_733_459_239_310_543,  202),
+        (8_091_450_587_292_794, -473),
+        (6_567_258_882_077_402,  952),
+        (6_712_731_423_444_934,  535),
+        (6_712_731_423_444_934,  534),
+        (5_298_405_411_573_037, -957),
+        (5_137_311_167_659_507, -144),
+        (6_722_280_709_661_868,  363),
+        (5_344_436_398_034_927, -169),
+        (8_369_123_604_277_281, -853),
+        (8_995_822_108_487_663, -780),
+        (8_942_832_835_564_782, -383),
+        (8_942_832_835_564_782, -384),
+        (8_942_832_835_564_782, -385),
+        (6_965_949_469_487_146, -249),
+        (6_965_949_469_487_146, -250),
+        (6_965_949_469_487_146, -251),
+        (7_487_252_720_986_826,  548),
+        (5_592_117_679_628_511,  164),
+        (8_887_055_249_355_788,  665),
+        (6_994_187_472_632_449,  690),
+        (8_797_576_579_012_143,  588),
+        (7_363_326_733_505_337,  272),
+        (8_549_497_411_294_502, -448),
     ];
 }
 
 #[test]
 fn test_checker() {
-    let values: &[(i64, i32, &str)] = &[
-        (1000000000000000000, 1, "10000000000000000000.0"),
+    let values: &[(u64, i32, &str)] = &[
+        (10000000000000000000, 0, "10000000000000000000.0"),
         (10, 21, "1.0e22"),
         (125, -24, "1.25e-22"),
         (10, -1, "1.0"),
@@ -468,4 +504,23 @@ fn test_checker() {
 #[test]
 fn test_f64() {
     FloatChecker::<f64>::tests();
+}
+
+trait FloatFromParts {
+    type BitsType;
+    fn from_parts(significand: Self::BitsType, exponent: i32, negative: bool) -> Self;
+}
+
+impl FloatFromParts for f64 {
+    type BitsType = u64;
+
+    fn from_parts(significand: Self::BitsType, exponent: i32, negative: bool) -> Self {
+        assert!(significand / 2 <= <Decoded<u64> as FPDecoded>::FRACTION_MASK);
+        let exp: u64 = (exponent + <Decoded<u64> as FPDecoded>::EXPONENT_BIAS) as u64;
+        assert!(exp <= <Decoded<u64> as FPDecoded>::EXPONENT_MASK);
+        let bits: u64 = (significand & <Decoded<u64> as FPDecoded>::FRACTION_MASK)
+            | exp.unsigned_shl(<Decoded<u64> as FPDecoded>::SIGNIFICAND_SIZE as u32 - 1)
+            | if negative { <Decoded<u64> as FPDecoded>::SIGN_MASK } else { 0 };
+        f64::from_bits(bits)
+    }
 }

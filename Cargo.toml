@@ -18,4 +18,3 @@ ilog = "1"
 [dev-dependencies]
 num = "0.4"
 oorandom = "11"
-bigdecimal = "0.3.0"
