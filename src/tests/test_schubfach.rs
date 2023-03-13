@@ -2,7 +2,8 @@
 
 use std::fmt::LowerExp;
 use std::str::FromStr;
-use ibig::{ibig, IBig};
+use bigdecimal::{BigDecimal, Signed, ToPrimitive};
+use bigdecimal::num_bigint::BigInt;
 use num::{Float, Zero};
 use crate::*;
 
@@ -61,12 +62,13 @@ struct ParseResult {
 
 trait FloatTester {
     fn parse(&self, string: String) -> Result<ParseResult, &str>;
-    fn recovers(&self, big: IBig) -> bool;
+    fn recovers(&self, big: &BigDecimal) -> bool;
     fn is_ok(&self) -> Result<(), String>;
 }
 
 impl<T> FloatTester for FloatChecker<T>
-    where T: Zero + Float + FormatInterface + FloatConst + From<f64> + FromStr
+    where T: Zero + Float + FormatInterface + FloatConst + From<f64> + FromStr + Display,
+          BigDecimal: TryFrom<T> + TryToFloat<T>
 {
     fn parse(&self, mut string: String) -> Result<ParseResult, &str> {
         let mut result = ParseResult { c: 0, q: 0, len10: 0 };
@@ -241,11 +243,12 @@ impl<T> FloatTester for FloatChecker<T>
         }
     }
 
-    fn recovers(&self, big: IBig) -> bool {
-        let value: T = big.to_f64().into();
-        value == self.v
+    fn recovers(&self, big: &BigDecimal) -> bool {
+        match big.to_float() {
+            Some(f) => f == self.v,
+            None => panic!("cannot convert {} to float", big)
+        }
     }
-
 
     fn is_ok(&self) -> Result<(), String> {
         // parses the string to verify its format
@@ -296,35 +299,72 @@ impl<T> FloatTester for FloatChecker<T>
             parsed.q += 1;
             parsed.len10 -= 1;
         }
+        println!("parsed: {:?}", parsed);
         if parsed.len10 < 2 {
             parsed.c *= 10;
             parsed.q -= 1;
             parsed.len10 += 1;
         }
-
-        // println!("parsed: {:?}", parsed);
-
         if parsed.len10 < 2 || T::max_len10() < parsed.len10 {
             return Err(format!("parsed.len10 = {} out of boundaries (2 .. {})", parsed.len10, T::max_len10()));
         }
+        // The exponent is bounded
+        if parsed.q + parsed.len10 < T::E_MIN || T::E_MAX < parsed.q + parsed.len10 {
+            return Err("out of exponent bounds".to_string());
+        }
+        while parsed.len10 > 2 && parsed.c % 10 == 0 {
+            parsed.c /= 10;
+            parsed.q += 1;
+            parsed.len10 -= 1;
+        }
 
         if parsed.len10 > 2 {
-            let mut p = parsed.clone();
-            while p.c % 10 == 0 {
-                p.c /= 10;
-                p.q += 1;
-                p.len10 -= 1;
+            // let mut p = parsed.clone();
+            // while p.c % 10 == 0 {
+            //     p.c /= 10;
+            //     p.q += 1;
+            //     p.len10 -= 1;
+            // }
+            let low = big_decimal_from(parsed.c as u64 / 10, -parsed.q - 1);
+            if self.recovers(&low) {
+                return Err(format!("recovers with shorter, lower value ({}), c = {}, q = {}", &low, parsed.c, parsed.q));
             }
-            let low = ibig_scale(p.c as u64 / 10, -p.q - 1);
-            // println!("ibig_scale({}, {})", p.c as u64 / 10, -p.q - 1);
-            if self.recovers(low.clone()) {
-                return Err(format!("recovers with shorter, lower value ({})", &low));
-            }
-            let high = ibig_scale(p.c as u64 / 10 + 1, -p.q - 1);
-            if self.recovers(high.clone()) {
-                return Err(format!("recovers with shorter, higher value ({})", &high));
+            let high = big_decimal_from(parsed.c as u64 / 10 + 1, -parsed.q - 1);
+            if self.recovers(&high) {
+                return Err(format!("recovers with shorter, higher value ({}), c = {}, q = {}", &high, parsed.c, parsed.q));
             }
         }
+
+        let dp = if parsed.c == 10 {
+            big_decimal_from(99, -parsed.q + 1)
+        } else {
+            big_decimal_from(parsed.c as u64 - 1, -parsed.q)
+        };
+
+        println!(" -> {:?}", parsed);
+        if self.recovers(&dp) {
+            let bv = match BigDecimal::try_from(self.v) {
+                Ok(big) => big,
+                Err(_) => panic!("could not convert {} to big decimal", self.v)
+            };
+            let deltav = &bv - big_decimal_from(parsed.c as u64, -parsed.q);
+            if !deltav.is_negative() {
+                return Ok(())
+            }
+            let delta = &dp - &bv;
+            if !delta.is_negative() {
+                return Err(format!("delta >= 0: dp - bv = {} - {} = {}", dp, bv, delta));
+            }
+            let cmp = deltav.cmp(&delta);
+            if cmp.is_gt() || (cmp.is_eq() && parsed.c & 1 == 0) {
+                return Ok(())
+            } else {
+                return Err(format!("comparison fails between delta ({}) <> deltav ({}) with c = {}",
+                    delta, deltav, parsed.c
+                ));
+            }
+        }
+
 /*
         // Try with the decimal predecessor...
         BigDecimal dp = c == 10 ?
@@ -365,13 +405,17 @@ impl<T> FloatTester for FloatChecker<T>
     }
 }
 
-fn ibig_scale(unscaled: u64, scale: i32) -> IBig {
-    let unscaled_b = IBig::from(unscaled);
-    let scale_b = ibig!(10).pow(scale.abs() as usize);
-    if scale > 0 {
-        unscaled_b / scale_b
-    } else {
-        unscaled_b * scale_b
+fn big_decimal_from(unscaled: u64, scale: i32) -> BigDecimal {
+    BigDecimal::new(BigInt::from(unscaled), scale as i64)
+}
+
+trait TryToFloat<T> {
+    fn to_float(&self) -> Option<T>;
+}
+
+impl TryToFloat<f64> for BigDecimal {
+    fn to_float(&self) -> Option<f64> {
+        self.to_f64()
     }
 }
 
@@ -419,10 +463,12 @@ fn test_checker() {
         }
     }
 }
+
 // ---------------------------------------------------------------------------------------------
 
 fn test_dec<T>(x: T)
-    where T: Zero + Float + FormatInterface + FloatConst + Display + LowerExp + From<f64> + FromStr
+    where T: Zero + Float + FormatInterface + FloatConst + Display + LowerExp + From<f64> + FromStr,
+          BigDecimal: TryFrom<T> + TryToFloat<T>
 {
     let mut options = FmtOptions::simple();
     options.trailing_dot_zero = true;
