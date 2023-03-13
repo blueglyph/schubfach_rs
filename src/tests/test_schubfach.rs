@@ -2,7 +2,7 @@
 
 use std::fmt::LowerExp;
 use std::str::FromStr;
-use bigdecimal::{BigDecimal, Signed, ToPrimitive};
+use bigdecimal::{BigDecimal, ToPrimitive};
 use bigdecimal::num_bigint::BigInt;
 use num::{Float, Zero};
 use crate::*;
@@ -25,7 +25,7 @@ impl<T: Copy + FormatInterface> FloatChecker<T> {
     }
 }
 
-trait FloatConst where Self: Sized {
+trait FloatConst where Self: Sized + 'static {
     const P: i32;
     const W: i32;
     const Q_MIN: i32;
@@ -43,6 +43,8 @@ trait FloatConst where Self: Sized {
     const C_TINY: i64;
     const MIN_FIXED_DECIMAL_POINT: isize;
     const MAX_FIXED_DECIMAL_POINT: isize;
+    const EXTREMES: &'static [Self];
+    const ANOMALIES: &'static [&'static str];
 
     fn max_len10() -> i32 {
         Self::MAX_FIXED_DECIMAL_POINT as i32
@@ -61,15 +63,22 @@ struct ParseResult {
 }
 
 trait FloatTester {
+    type Data;
     fn parse(&self, string: String) -> Result<ParseResult, &str>;
     fn recovers(&self, big: &BigDecimal) -> bool;
     fn is_ok(&self) -> Result<(), String>;
+    fn test_dec(x: Self::Data);
+    fn test_extreme_values();
+    fn test_some_anomalies();
+    fn tests();
 }
 
 impl<T> FloatTester for FloatChecker<T>
-    where T: Zero + Float + FormatInterface + FloatConst + From<f64> + FromStr + Display,
+    where T: Copy + Zero + Float + FormatInterface + FloatConst + From<f64> + FromStr + Display + LowerExp,
           BigDecimal: TryFrom<T> + TryToFloat<T>
 {
+    type Data = T;
+
     fn parse(&self, mut string: String) -> Result<ParseResult, &str> {
         let mut result = ParseResult { c: 0, q: 0, len10: 0 };
         string.push('*'); // end delimiter
@@ -299,7 +308,7 @@ impl<T> FloatTester for FloatChecker<T>
             parsed.q += 1;
             parsed.len10 -= 1;
         }
-        println!("parsed: {:?}", parsed);
+        // println!("parsed: {:?}", parsed);
         if parsed.len10 < 2 {
             parsed.c *= 10;
             parsed.q -= 1;
@@ -329,6 +338,36 @@ impl<T> FloatTester for FloatChecker<T>
             }
         }
         Ok(())
+    }
+    
+    fn test_dec(x: Self::Data) {
+        let mut options = FmtOptions::simple();
+        options.trailing_dot_zero = true;
+        let checker = FloatChecker::new(x, Some(options));
+        // println!("{x:e} => {}", checker.s);
+        if let Err(msg) = checker.is_ok() {
+            panic!("'{x:e}' didn't pass the test. Result: '{}', error:'{msg}'", checker.s);
+        }
+    }
+    
+    fn test_extreme_values() {
+        for dec in T::EXTREMES {
+            Self::test_dec(*dec);
+        }
+    }
+
+    fn test_some_anomalies() {
+        for &dec in T::ANOMALIES {
+            match dec.parse::<T>() {
+                Ok(v) => Self::test_dec(v),
+                Err(_) => panic!("could not parse '{}' to float", dec)
+            };
+        }
+    }
+
+    fn tests() {
+        Self::test_some_anomalies();
+        Self::test_extreme_values();
     }
 }
 
@@ -367,6 +406,39 @@ impl FloatConst for f64 {
     const C_TINY: i64 = 3;
     const MIN_FIXED_DECIMAL_POINT: isize = <NumFmtBuffer as NumFormat<f64, u64>>::MIN_FIXED_DECIMAL_POINT as isize;
     const MAX_FIXED_DECIMAL_POINT: isize = <NumFmtBuffer as NumFormat<f64, u64>>::MAX_FIXED_DECIMAL_POINT as isize;
+    const EXTREMES: &'static [Self] = &[
+        f64::NEG_INFINITY,
+        -f64::MAX_VALUE,
+        -f64::MIN_NORMAL,
+        -f64::MIN_VALUE,
+        -0.0,
+        0.0,
+        f64::MIN_VALUE,
+        f64::MIN_NORMAL,
+        f64::MAX_VALUE,
+        f64::INFINITY,
+        f64::NAN,
+    ];
+
+    /// There are tons of doubles that are rendered incorrectly by the JDK.
+    /// While the renderings correctly round back to the original value,
+    /// they are longer than needed or are not the closest decimal to the double.
+    /// Here are just a very few examples.
+    const ANOMALIES: &'static [&'static str] = &[
+        // JDK renders these, and others, with 18 digits!
+        "2.82879384806159E17", "1.387364135037754E18",
+        "1.45800632428665E17",
+
+        // JDK renders these longer than needed.
+        "1.6E-322", "6.3E-322",
+        "7.3879E20", "2.0E23", "7.0E22", "9.2E22",
+        "9.5E21", "3.1E22", "5.63E21", "8.41E21",
+
+        // JDK does not render these, and many others, as the closest.
+        "9.9E-324", "9.9E-323",
+        "1.9400994884341945E25", "3.6131332396758635E25",
+        "2.5138990223946153E25",
+    ];
 }
 
 #[test]
@@ -393,59 +465,7 @@ fn test_checker() {
 
 // ---------------------------------------------------------------------------------------------
 
-fn test_dec<T>(x: T)
-    where T: Zero + Float + FormatInterface + FloatConst + Display + LowerExp + From<f64> + FromStr,
-          BigDecimal: TryFrom<T> + TryToFloat<T>
-{
-    let mut options = FmtOptions::simple();
-    options.trailing_dot_zero = true;
-    let checker = FloatChecker::new(x, Some(options));
-    println!("{x:e} => {}", checker.s);
-    if let Err(msg) = checker.is_ok() {
-        panic!("'{x:e}' didn't pass the test. Result: '{}', error:'{msg}'", checker.s);
-    }
-}
-
 #[test]
-fn test_extreme_values() {
-    assert_eq!(f64::MIN_VALUE, f64::from_bits(0x0000000000000001));
-
-    test_dec(f64::NEG_INFINITY);
-    test_dec(-f64::MAX_VALUE);
-    test_dec(-f64::MIN_NORMAL);
-    test_dec(-f64::MIN_VALUE);
-    test_dec(-0.0);
-    test_dec(0.0);
-    test_dec(f64::MIN_VALUE);
-    test_dec(f64::MIN_NORMAL);
-    test_dec(f64::MAX_VALUE);
-    test_dec(f64::INFINITY);
-    test_dec(f64::NAN);
-}
-
-/// There are tons of doubles that are rendered incorrectly by the JDK.
-/// While the renderings correctly round back to the original value,
-/// they are longer than needed or are not the closest decimal to the double.
-/// Here are just a very few examples.
-const ANOMALIES: &[&str] = &[
-        // JDK renders these, and others, with 18 digits!
-        "2.82879384806159E17", "1.387364135037754E18",
-        "1.45800632428665E17",
-
-        // JDK renders these longer than needed.
-        "1.6E-322", "6.3E-322",
-        "7.3879E20", "2.0E23", "7.0E22", "9.2E22",
-        "9.5E21", "3.1E22", "5.63E21", "8.41E21",
-
-        // JDK does not render these, and many others, as the closest.
-        "9.9E-324", "9.9E-323",
-        "1.9400994884341945E25", "3.6131332396758635E25",
-        "2.5138990223946153E25",
-];
-
-#[test]
-fn test_some_anomalies() {
-    for dec in ANOMALIES {
-        test_dec(dec.parse::<f64>().unwrap());
-    }
+fn test_f64() {
+    FloatChecker::<f64>::tests();
 }
