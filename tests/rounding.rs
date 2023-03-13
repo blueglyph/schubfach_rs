@@ -45,6 +45,7 @@ fn find_issues(depth: usize, verbose: bool, show_error: bool, negative: bool, po
         }
     }
     println!("\n=> {nbr_error} / {nbr_test} error(s) for depth 0-{depth}");
+    assert_eq!(nbr_error, 0);
 }
 
 //==============================================================================
