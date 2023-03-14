@@ -1,8 +1,9 @@
 // Copyright 2022 Redglyph
 
 use crate::*;
-use crate::FmtMode::{Sci, Std};
+use crate::FmtMode::{Fix, Sci, Std};
 use crate::NumFmtBuffer;
+use crate::test_values::StdFixValues;
 
 fn test_format_opt(values: Vec<(f64, Option<u32>, Option<u32>, FmtMode, bool, &str)>) {
     let mut error = false;
@@ -26,7 +27,7 @@ fn test_format_opt(values: Vec<(f64, Option<u32>, Option<u32>, FmtMode, bool, &s
 }
 
 #[test]
-fn fixed() {
+fn std() {
     let values = vec![
         // 1) d-d[.0] or d-d(0-0)[.0]: trailing / scientific
         // value        width       prec        mode    trail   expected
@@ -115,6 +116,26 @@ fn fixed() {
         (99.999,        None,       Some(2),    Std,    false,  "100.00"),
         (99.995,        None,       Some(2),    Std,    false,  "100.00"),
         (99.989,        None,       Some(2),    Std,    false,  "99.99"),
+    ];
+    test_format_opt(values);
+}
+
+#[test]
+fn limit_fix_std() {
+    let lim = StdFixValues::new();
+    let values = vec![
+        (lim.max_fix,   None,       None,       Fix,    true,   lim.max_fix_str.as_str()),
+
+        // limits std / fix
+        // value        width       prec        mode    trail   expected
+        (lim.low_fix,   None,       None,       Fix,    true,   lim.low_fix_str.as_str()),
+        (lim.low_fix,   None,       None,       Std,    true,   lim.low_sci_str.as_str()),
+        (lim.min_fix,   None,       None,       Fix,    true,   lim.min_fix_str.as_str()),
+        (lim.min_fix,   None,       None,       Std,    true,   lim.min_fix_str.as_str()),
+        (lim.max_fix,   None,       None,       Fix,    true,   lim.max_fix_str.as_str()),
+        (lim.max_fix,   None,       None,       Std,    true,   lim.max_fix_str.as_str()),
+        (lim.high_fix,  None,       None,       Fix,    true,   lim.high_fix_str.as_str()),
+        (lim.high_fix,  None,       None,       Std,    true,   lim.high_sci_str.as_str()),
     ];
     test_format_opt(values);
 }

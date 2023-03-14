@@ -28,6 +28,7 @@ extern crate core;
 
 mod tests;
 mod maths;
+pub mod test_values;
 
 use std::{alloc, ptr};
 use std::alloc::Layout;
@@ -603,6 +604,7 @@ impl NumFmtBuffer {
 pub trait NumFormat<F, U> {
     const MIN_FIXED_DECIMAL_POINT: i32 = -3; // 0.000[17 digits] -> fixed, more zeros -> scientific
     const MAX_FIXED_DECIMAL_POINT: i32 = 20; // [17 digits]000.0 -> fixed, more digits -> scientific
+    const MAX_DIGITS : i32;                  // maximum number of digits
 
     unsafe fn simple_format(&mut self, decoded: Decoded<U>) -> usize;
     fn format(&mut self, decoded: Decoded<U>) -> usize;
@@ -612,6 +614,8 @@ pub trait NumFormat<F, U> {
 }
 
 impl NumFormat<f64, u64> for NumFmtBuffer {
+
+    const MAX_DIGITS : i32 = 17; // maximum number of digits
 
     // -----------------------------------------------------------------------------------------
 
@@ -1058,7 +1062,7 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
                                         decimal_ptr.add(2).write_bytes(b'0', p as usize - 1);
                                     }
                                 }
-                                num_digits0 + 1 + precision.unwrap_or(1) as usize
+                                num_digits0 + exponent as usize + 1 + precision.unwrap_or(1) as usize
                             } else {
                                 num_digits0
                             }

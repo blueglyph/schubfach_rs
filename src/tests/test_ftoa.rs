@@ -25,16 +25,16 @@ fn limits_ftoa() {
     ];
     for (idx, (value, exp)) in tests.into_iter().enumerate() {
         let res = value.ftoa();
-        println!("value = {}  exp = {} res = {}", value, exp, res);
+        // println!("value = {}  exp = {} res = {}", value, exp, res);
         assert_eq!(res, *exp, "failed in test #{idx}");
     }
 }
 
 #[test]
 fn exponential_ftoa() {
-    println!("{}", 1.25e-20.ftoa());
-    println!("{}", 125.0e-20.ftoa());
-    println!("{}", 1.25e30.ftoa());
+    assert_eq!(1.25e-20.ftoa(), "1.25e-20");
+    assert_eq!(125.0e-20.ftoa(), "1.25e-18");
+    assert_eq!(1.25e30.ftoa(), "1.25e30");
 }
 
 /// Timing test, launch with

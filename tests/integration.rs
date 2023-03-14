@@ -5,6 +5,7 @@
 #![cfg(test)]
 
 use schubfach::*;
+use schubfach::test_values::StdFixValues;
 
 #[test]
 fn format_options() {
@@ -19,17 +20,15 @@ fn format_options() {
 
 #[test]
 fn display_f64() {
-    // if MIN_FIXED_DECIMAL_POINT = -3 => 0.000[d] is the limit => 1e-4 is the limit
-    // for std as fixed-format
-    let min = <NumFmtBuffer as NumFormat<f64, u64>>::MIN_FIXED_DECIMAL_POINT - 1;
+    let limit = StdFixValues::new();
 
     let val1: f64 = 0.5;
     let val2: f64 = 1.5;
-    let val3: f64 = 10.0_f64.powi(min);
-    let val4 = val3 / 10.0;
-    let str3_fix = "0.".to_string() + &"0".repeat(min.abs() as usize - 1) + "1";
-    let str4_fix = "0.".to_string() + &"0".repeat(min.abs() as usize) + "1";
-    let str4_sci = format!("1.0e{}", min - 1);
+    let val3 = limit.min_fix;
+    let val4 = limit.low_fix;
+    let str3_fix = limit.min_fix_str;
+    let str4_fix = limit.low_fix_str;
+    let str4_sci = limit.low_sci_str;
     assert_eq!(format!("{}",    val1.to_std()), "0.5",       "test with std, '{{}}'");
     assert_eq!(format!("{:+}",  val1.to_std()), "+0.5",      "test with std, '{{:+}}'");
     assert_eq!(format!("{:5}",  val1.to_std()), "  0.5",     "test with std, '{{:5}}'");

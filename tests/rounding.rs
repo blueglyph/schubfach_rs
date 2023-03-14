@@ -22,6 +22,7 @@ fn format_rounding() {
 /// Note: we could also check [Round::round_digit] for comparison but it's not correct all
 /// the time anyway.
 fn find_issues(depth: usize, verbose: bool, show_error: bool, negative: bool, policy: &Policy) {
+    const MAX_REPORTED_ERRORS: i32 = 30;
     let it = RoundTestIter::new(depth, negative);
     let mut nbr_test = 0;
     let mut nbr_error = 0;
@@ -40,11 +41,16 @@ fn find_issues(depth: usize, verbose: bool, show_error: bool, negative: bool, po
             "<>"
         };
         nbr_test += 1;
-        if verbose || show_error && display_val != sround_val {
+        if verbose || (show_error && display_val != sround_val && nbr_error <= MAX_REPORTED_ERRORS) {
             println!("{sval:<8}:{pr}: {display_val} {comp} {sround_val}");
         }
     }
-    println!("\n=> {nbr_error} / {nbr_test} error(s) for depth 0-{depth}");
+    if show_error && nbr_error > MAX_REPORTED_ERRORS {
+        println!("... (other errors)");
+    }
+    if verbose || (show_error && nbr_error > 0) {
+        println!("\n=> {nbr_error} / {nbr_test} error(s) for depth 0-{depth}");
+    }
     assert_eq!(nbr_error, 0);
 }
 
