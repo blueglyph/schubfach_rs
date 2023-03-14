@@ -3,6 +3,7 @@
 use std::fmt::LowerExp;
 use std::str::FromStr;
 use num::{Float, PrimInt, Zero};
+use oorandom::Rand64;
 use crate::*;
 
 #[derive(Debug)]
@@ -23,6 +24,16 @@ impl<T: Copy + FormatInterface> FloatChecker<T> {
     }
 }
 
+/// Builds a floating-point value from parts (significand, exponent, sign, ...)
+trait FloatFromParts {
+    type BitsType;
+    /// Builds a floating-point value from its significand, exponent, and sign.
+    fn from_parts(significand: Self::BitsType, exponent: i32, negative: bool) -> Self;
+    fn from_rnd_parts(rng: &mut Rand64) -> Self;
+    fn from_rnd_float(rng: &mut Rand64) -> Self;
+}
+
+/// Floating-point constants for each type (f64, ...)
 trait FloatConst where Self: Sized + 'static + FloatFromParts
 {
     const P: i32;
@@ -74,11 +85,15 @@ trait FloatTester {
     fn test_powers2();
     fn test_powers10();
     fn test_paxson();
-    fn tests();
+    fn test_ints();
+    fn test_longs();
+    fn test_random(random_count: u64);
+    fn test_random_units(random_count: u64);
+    fn tests(random_count: u64);
 }
 
 impl<T> FloatTester for FloatChecker<T>
-    where T: Copy + Zero + Float + FormatInterface + FloatConst + From<f64> + FromStr +
+    where T: Copy + Zero + Float + FormatInterface + FloatConst + From<f64> + FromStr + From<i32> +
              Display + LowerExp + FloatFromParts,
           <T as FloatFromParts>::BitsType: Copy
 {
@@ -374,12 +389,42 @@ impl<T> FloatTester for FloatChecker<T>
         }
     }
 
-    fn tests() {
+    fn test_ints() {
+        for i in 0..1_000_000 {
+            Self::test_dec(<T as From<i32>>::from(i));
+        }
+    }
+
+    fn test_longs() {
+        for i in 10_000..100_000 {
+            Self::test_dec(<T as From<i32>>::from(i) * 1.0e15.into());
+        }
+    }
+
+    fn test_random(random_count: u64) {
+        let mut rng = Rand64::new(0);
+        for _ in 0..random_count {
+            Self::test_dec(T::from_rnd_parts(&mut rng));
+        }
+    }
+
+    fn test_random_units(random_count: u64) {
+        let mut rng = Rand64::new(1);
+        for _ in 0..random_count {
+            Self::test_dec(T::from_rnd_float(&mut rng));
+        }
+    }
+
+    fn tests(random_count: u64) {
         Self::test_some_anomalies();
         Self::test_extreme_values();
         Self::test_powers2();
         Self::test_powers10();
         Self::test_paxson();
+        Self::test_ints();
+        Self::test_longs();
+        Self::test_random(random_count);
+        Self::test_random_units(random_count);
     }
 }
 
@@ -477,7 +522,38 @@ impl FloatConst for f64 {
     ];
 }
 
+impl FloatFromParts for f64 {
+    type BitsType = u64;
+
+    /// Builds an f64 from its significand, exponent, and sign.
+    ///
+    /// The `significand` is masked and its MSB is removed. The `exponent` must be provided
+    /// unbiased, as a signed integer.
+    fn from_parts(significand: Self::BitsType, exponent: i32, negative: bool) -> Self {
+        assert!(significand / 2 <= <Decoded<u64> as FPDecoded>::FRACTION_MASK);
+        let exp: u64 = (exponent + <Decoded<u64> as FPDecoded>::EXPONENT_BIAS) as u64;
+        assert!(exp <= <Decoded<u64> as FPDecoded>::EXPONENT_MASK);
+        let bits: u64 = (significand & <Decoded<u64> as FPDecoded>::FRACTION_MASK)
+            | exp.unsigned_shl(<Decoded<u64> as FPDecoded>::SIGNIFICAND_SIZE as u32 - 1)
+            | if negative { <Decoded<u64> as FPDecoded>::SIGN_MASK } else { 0 };
+        f64::from_bits(bits)
+    }
+
+    /// Builds an f64 from random u64 bits, so it can generate normal/subnormal values and inf/NaN.
+    fn from_rnd_parts(rng: &mut Rand64) -> Self {
+        f64::from_bits(rng.rand_u64())
+    }
+
+    /// Builds an f64 from a random value in the range [0 - 2^53[.
+    fn from_rnd_float(rng: &mut Rand64) -> Self {
+        const HIDDEN_BIT: u64 = <Decoded<u64> as FPDecoded>::HIDDEN_BIT;
+        let significand: u64 = rng.rand_range(0..HIDDEN_BIT) | HIDDEN_BIT;
+        f64::from_parts(significand, 0, false)
+    }
+}
+
 #[test]
+/// Tests the tester
 fn test_checker() {
     let values: &[(u64, i32, &str)] = &[
         (10000000000000000000, 0, "10000000000000000000.0"),
@@ -503,24 +579,5 @@ fn test_checker() {
 
 #[test]
 fn test_f64() {
-    FloatChecker::<f64>::tests();
-}
-
-trait FloatFromParts {
-    type BitsType;
-    fn from_parts(significand: Self::BitsType, exponent: i32, negative: bool) -> Self;
-}
-
-impl FloatFromParts for f64 {
-    type BitsType = u64;
-
-    fn from_parts(significand: Self::BitsType, exponent: i32, negative: bool) -> Self {
-        assert!(significand / 2 <= <Decoded<u64> as FPDecoded>::FRACTION_MASK);
-        let exp: u64 = (exponent + <Decoded<u64> as FPDecoded>::EXPONENT_BIAS) as u64;
-        assert!(exp <= <Decoded<u64> as FPDecoded>::EXPONENT_MASK);
-        let bits: u64 = (significand & <Decoded<u64> as FPDecoded>::FRACTION_MASK)
-            | exp.unsigned_shl(<Decoded<u64> as FPDecoded>::SIGNIFICAND_SIZE as u32 - 1)
-            | if negative { <Decoded<u64> as FPDecoded>::SIGN_MASK } else { 0 };
-        f64::from_bits(bits)
-    }
+    FloatChecker::<f64>::tests(1_000);
 }
