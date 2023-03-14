@@ -292,6 +292,7 @@ impl From<Decoded<u64>> for FloatingDecimal<u64> {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FmtMode {
+    Std,
     Fix,
     Sci,
     Simple
@@ -335,7 +336,7 @@ impl Default for FmtOptions {
             trailing_dot_zero: true,
             negative_zero: true,
             panic_on_issue: false,
-            mode: FmtMode::Fix
+            mode: FmtMode::Std
         }
     }
 }
@@ -783,7 +784,7 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
             3 + Self::MAX_FIXED_DECIMAL_POINT as usize),
             "buffer size is too small for format()");
 
-        let forced_fixed = false;   // TODO: from options STD/FIX/...
+        let forced_fixed = self.options.mode == FmtMode::Fix;
 
         let decimal = FloatingDecimal::from(decoded);
         let digits = decimal.digits;
@@ -808,8 +809,13 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
             // extracts the raw digits
             let num_digits0 = decimal_length(digits);
             let mut decimal_point = num_digits0 as i32 + exponent;
-            let mut use_fixed = self.options.mode == FmtMode::Fix &&
-                Self::MIN_FIXED_DECIMAL_POINT <= decimal_point && decimal_point <= Self::MAX_FIXED_DECIMAL_POINT;
+            let decimal_point_inside = Self::MIN_FIXED_DECIMAL_POINT <= decimal_point &&
+                    decimal_point <= Self::MAX_FIXED_DECIMAL_POINT;
+            let mut use_fixed = match self.options.mode {
+                FmtMode::Std if decimal_point_inside => true,
+                FmtMode::Fix => true,
+                _ => false
+            };
             let decimal_digits_position: usize =
                 if use_fixed {
                     if decimal_point <= 0 {
@@ -1350,6 +1356,8 @@ pub struct NumWithOptions<F: Sized> {
 pub trait FormatInterface
     where Self: Sized
 {
+    /// STD interface to Display formatter (fixed or scientific, depending).
+    fn to_std(&self) -> NumWithOptions<Self>;
     /// FIX interface to Display formatter (fixed decimal place).
     fn to_fix(&self) -> NumWithOptions<Self>;
     /// SCI interface to Display formatter (scientific format).
@@ -1364,6 +1372,10 @@ pub trait FormatInterface
 }
 
 impl FormatInterface for f64 {
+    fn to_std(&self) -> NumWithOptions<Self> {
+        NumWithOptions { value: *self, mode: FmtMode::Std }
+    }
+
     fn to_fix(&self) -> NumWithOptions<Self> {
         NumWithOptions { value: *self, mode: FmtMode::Fix }
     }
