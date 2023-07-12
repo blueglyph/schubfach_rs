@@ -1120,6 +1120,11 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
 
                 // check width and precision
                 let sci_exponent = decimal_point - 1;
+                // ENG shifts the exponent down to multiple of 3, and shifts the '.' right accordingly
+                let eng_exp_shift = match self.options.mode {
+                    FmtMode::Eng => (900 + sci_exponent) % 3, // adds multiple of 3 to make negative values positive (min = -308)
+                    _ => 0
+                };
                 let mut num_exp_digits = {
                     let num_exp_digits_abs = match sci_exponent.abs() {
                         0 ..=  9 => 1,
@@ -1129,7 +1134,8 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
                     num_exp_digits_abs + if sci_exponent < 0 { 1 } else { 0 }
                 };
                 if let Some(w) = width {
-                    if self.options.panic_on_issue && w < 2 + num_exp_digits {   // 2 = first digit + 'E'
+                    if self.options.panic_on_issue && w < 2 + num_exp_digits + eng_exp_shift as u32 {
+                        // 2 = first digit + 'E'; eng_exp_shift = extra mantissa digits in ENG
                         // TODO: returns an error, panics if options.panic in upper function
                         panic!("cannot format value with width <= {w}, requires at least {} characters", 3 + num_exp_digits);
                     }
