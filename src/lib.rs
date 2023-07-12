@@ -296,6 +296,7 @@ pub enum FmtMode {
     Std,
     Fix,
     Sci,
+    Eng,
     Simple
 }
 
@@ -1103,12 +1104,19 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
                 length
             } else {
                 // ---------------------------------------------------------------------------------
-                // scientific
+                // scientific / engineering
                 // ---------------------------------------------------------------------------------
                 // vvvvvvvvvvvv--- max width          = 12 (optional)
-                // 1.380649E-23
+                // 1.380649E-24
                 //          ^^^--- num_exp_digits     =  3
                 //   ^^^^^^------- precision          =  6 (optional)
+                //
+                // Difference in engineering mode:
+                // - exponent is decreased by 0, 1, or 2 to be a multiple of 3
+                // - the decimal point is moved right accordingly, so the mantissa is between 1 and 999
+                //   (the null case is handled elsewhere)
+                // - it uses the same precision as SCI, but extra '0' may have to be inserted in the mantissa
+                //   if the decimal point goes past the precision
 
                 // check width and precision
                 let sci_exponent = decimal_point - 1;
@@ -1238,7 +1246,7 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
                 } /*else { // collapsed with previous case
                     self.ptr = self.ptr.add(1);
                 }*/
-                // start_ptr, end_ptr not up-to-date anymore, not used later
+                // start_ptr, end_ptr not up-to-date any more, not used later
 
                 // Exponent
                 // --------
@@ -1366,6 +1374,8 @@ pub trait FormatInterface
     fn to_fix(&self) -> NumWithOptions<Self>;
     /// SCI interface to Display formatter (scientific format).
     fn to_sci(&self) -> NumWithOptions<Self>;
+    /// ENG interface to Display formatter (engineering format).
+    fn to_eng(&self) -> NumWithOptions<Self>;
 
     /// Converts the number into decimal form.
     fn ftoa(&self) -> String;
@@ -1386,6 +1396,10 @@ impl FormatInterface for f64 {
 
     fn to_sci(&self) -> NumWithOptions<Self> {
         NumWithOptions { value: *self, mode: FmtMode::Sci }
+    }
+
+    fn to_eng(&self) -> NumWithOptions<Self> {
+        NumWithOptions { value: *self, mode: FmtMode::Eng }
     }
 
     /// Converts the double-precision number into decimal form.
