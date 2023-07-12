@@ -1,5 +1,7 @@
 // Copyright 2022 Redglyph
 
+#![cfg(test)]
+
 use std::fmt::LowerExp;
 use std::str::FromStr;
 use num::{Float, PrimInt, Zero};
