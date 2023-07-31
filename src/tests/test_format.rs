@@ -1,7 +1,7 @@
 // Copyright 2022 Redglyph
 
 use crate::*;
-use crate::FmtMode::{Fix, Sci, Std};
+use crate::FmtMode::{Eng, Fix, Sci, Std};
 use crate::NumFmtBuffer;
 use crate::test_values::StdFixValues;
 
@@ -179,6 +179,49 @@ fn sci() {
         (-9.999e99,     Some(6),    None,       Sci,    true,    "-1e100"),
         (-9.999e9,      Some(6),    None,       Sci,    true,    "-1e10"),
         (-9.999e99,     Some(7),    None,       Sci,    true,    "-1e100"),
+    ];
+    test_format_opt(values);
+}
+
+#[test]
+fn eng() {
+    let values = vec![
+        // value              width       prec        mode    trail   expected
+        // (123.0,               None,       None,       Eng,    true,   "123.0e0"),
+        (100.0,               None,       Some(0),    Eng,    true,   "100e0"),
+        (10.0,                None,       Some(0),    Eng,    true,   "10e0"),
+        (1.0,                 None,       Some(0),    Eng,    true,   "1e0"),
+        (1000.0,              None,       Some(0),    Eng,    true,   "1e3"),
+        //
+        (1.234,               None,       Some(1),    Eng,    true,   "1.2e0"),
+        (12.34,               None,       Some(1),    Eng,    true,   "12.0e0"),
+        (123.4,               None,       Some(1),    Eng,    true,   "120.0e0"),
+        (1234.0,              None,       Some(1),    Eng,    true,   "1.2e3"),
+        //
+        (1.234,               None,       Some(2),    Eng,    true,   "1.23e0"),
+        (12.34,               None,       Some(2),    Eng,    true,   "12.3e0"),
+        (123.4,               None,       Some(2),    Eng,    true,   "123.0e0"),
+        (1234.0,              None,       Some(2),    Eng,    true,   "1.23e3"),
+        //
+        (1.234,               None,       Some(3),    Eng,    true,   "1.234e0"),
+        (12.34,               None,       Some(3),    Eng,    true,   "12.34e0"),
+        (123.4,               None,       Some(3),    Eng,    true,   "123.4e0"),
+        (1234.0,              None,       Some(3),    Eng,    true,   "1.234e3"),
+        // checks that extra '0' are added to integer part
+        (1000.0,              None,       Some(0),    Eng,    true,   "1e3"),
+        (10000.0,             None,       Some(0),    Eng,    true,   "10e3"),
+        (100000.0,            None,       Some(0),    Eng,    true,   "100e3"),
+        (1000000.0,           None,       Some(0),    Eng,    true,   "1e6"),
+        (10000000.0,          None,       Some(0),    Eng,    true,   "10e6"),
+        (100000000.0,         None,       Some(0),    Eng,    true,   "100e6"),
+        (1000000000.0,        None,       Some(0),    Eng,    true,   "1e9"),
+        (10000000000.0,       None,       Some(0),    Eng,    true,   "10e9"),
+        (100000000000.0,      None,       Some(0),    Eng,    true,   "100e9"),
+        (1000000000000.0,     None,       Some(0),    Eng,    true,   "1e12"),
+        (10000000000000.0,    None,       Some(0),    Eng,    true,   "10e12"),
+        (100000000000000.0,   None,       Some(0),    Eng,    true,   "100e12"),
+        (1000000000000000.0,  None,       Some(0),    Eng,    true,   "1e15"),
+        (10000000000000000.0, None,       Some(0),    Eng,    true,   "10e15"),
     ];
     test_format_opt(values);
 }
