@@ -1119,22 +1119,10 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
                 //   if the decimal point goes past the precision
 
                 // check width and precision
-                let sci_exponent = decimal_point - 1;
+                let mut sci_exponent = decimal_point - 1;
                 // ENG shifts the exponent down to multiple of 3, and shifts the '.' right accordingly
-                let eng_exp_shift = match self.options.mode {
-                    FmtMode::Eng => {
-                        let ees = (900 + sci_exponent) % 3;
-//                        // add extra '0' to complete the integer part if necessary:
-//                        let extra_zeros = max(0, ees + 1 - num_digits as i32) as usize;
-//                        if extra_zeros > 0 {
-//                            ptr::write_bytes(start_ptr.add(num_digits), b'0', extra_zeros);
-//                            num_digits += extra_zeros;
-//                            #[allow(unused_assignments)] {
-//                                end_ptr = end_ptr.add(extra_zeros);     // just for safety; not used any more
-//                            }
-//                        }
-                        ees as usize
-                    }, // adds multiple of 3 to make negative values positive (min = -308)
+                let mut eng_exp_shift = match self.options.mode {
+                    FmtMode::Eng => (900 + sci_exponent) as usize % 3, // adds 3N to make negative values positive (min exp = -308)
                     _ => 0
                 };
                 let mut num_exp_digits = {
@@ -1191,7 +1179,7 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
                                     let leading9 = (0..offset).take_while(|ofs| *start_ptr.add(*ofs) == b'9').count();
                                     if previous_digit >= b'5' && leading9 >= offset {
                                         #[allow(unused_assignments)] {
-                                            num_exp_digits -= 1;     // just for safety; not used any more
+                                            num_exp_digits -= 1;     // just for safety; not used later
                                         }
                                         pmax += 1
                                     }
@@ -1204,8 +1192,33 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
                     }
                 }
 
+                // Mantissa
+                // --------
+                //   |=>|               decimal_point = -2
+                //      |<=====>|       num_digits    =  7
+                // [0.00]2480649?????
+                //       |\\\\\\
+                //       2.480649E-3
+                //                ^^--- num_exp_digits =  2
+                //         ^^^^-------- precision      =  Some(4)
+                // Lengths (without the mantissa sign)
+                // - precision = None:    m = 1 + num_digits = 8, e = 1 + num_exp_digits = 3
+                // - precision = Some(4): m = 2 + precision  = 6, e = 1 + num_exp_digits = 3
+
                 // Rounding
                 // --------
+                //            DDP = 1 (SCI)                      DDP = 1 (ENG)
+                // --------------------------------------------------------------------------
+                // 9.99573E11           decimal_point = 11                 decimal_point = 11
+                //            |<====>|  num_digit = 6            |<====>|  num_digits = 6
+                // buffer:    ?999573                            ?999573   eng_exp_shift = 2
+                //             /|||||                             ///|||
+                //            9.99573E11                         999.573E9
+                //              ^^----- precision = Some(2) -------^^
+                //
+                // rounding:  1000???   decimal_point = 12       1000???   decimal_point = 12
+                //            |\\\      num_digits = 4           |\\\      num_digits = 4
+                //            1.000E12                           1.000E12  eng_exp_shift = 0
                 if let Some(p) = precision {
                     if p + 1 < num_digits as u32 {
                         let prev_digit_ptr = start_ptr.add(1 + p as usize);
@@ -1215,26 +1228,19 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
                         if left {
                             start_ptr = start_ptr.sub(1);
                         }
-                        if left || right {
-                            //end_ptr = end_ptr.add(1);   // not used later
-                            decimal_point += 1;
-                            num_digits += 1;
+                        let carry = usize::from(left || right);
+                        num_digits = 1 + carry + p as usize;
+                        decimal_point += carry;
+                        eng_exp_shift += carry;
+                        if eng_exp_shift == 3 { eng_exp_shift = 0; }
+                        #[allow(unused_assignments)] {
+                            // just for safety; not used later
+                            if self.options.mode != FmtMode::Eng { num_exp_digits += 1; }
+                            sci_exponent += 1;
+                            end_ptr = start_ptr.add(num_digits);
                         }
                     }
                 }
-
-                // Mantissa
-                // --------
-                //   |=>|               decimal_point = -2
-                //      |<=====>|       num_digits    =  7
-                // [0.00]2480649?????
-                //       |\\\\\\
-                //       2.480649E-3
-                //                ^^--- num_exp_digits     =  2
-                //         ^^^^-------- precision          =  4 (optional)
-                // Lengths (without the mantissa sign)
-                // - precision = None:    m = 1 + num_digits = 8, e = 1 + num_exp_digits = 3
-                // - precision = Some(4): m = 2 + precision  = 6, e = 1 + num_exp_digits = 3
 
                 // add extra zeros to complete the SCI fractional part and/or the ENG integer part if necessary
                 // (precision may be set to add ".0" to ENG integers; in that case, it includes eng_exp_shift)
@@ -1244,14 +1250,15 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
                     ptr::write_bytes(start_ptr.add(num_digits), b'0', extra_zeros);
                     num_digits += extra_zeros;
                     #[allow(unused_assignments)] {
-                        end_ptr = end_ptr.add(extra_zeros);     // just for safety; not used any more
+                        end_ptr = end_ptr.add(extra_zeros);     // just for safety; not used later
                     }
                 }
 
-                let num_decimals_sci = precision.unwrap_or(num_digits as u32 - 1) as i32;
-                let num_decimals = max(0, num_decimals_sci - eng_exp_shift as i32) as usize;
-                let num_bytes = min(num_digits - 1, num_decimals);
-                if num_decimals > 0 {
+                // let num_decimals_sci = precision.unwrap_or(num_digits as u32 - 1) as i32;
+                // let num_decimals = max(0, num_decimals_sci - eng_exp_shift as i32) as usize;
+                // let num_bytes = min(num_digits - 1, num_decimals);
+                if num_digits_wanted > 1 {
+                    let num_bytes = (num_digits_wanted - 1) as usize;
                     match decimal_digits_position {
                         0 => { // FIX/STD changed to SCI (not ENG): D-D.d-d or D-D(0-0)[.0]
                             ptr::copy(start_ptr.add(1), start_ptr.add(2), num_bytes);
