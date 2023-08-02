@@ -962,6 +962,7 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
                     }
                 }
             }
+//use_fixed = false;
             let (mut left, mut right) = (false, false);
             if use_fixed {
                 // ---------------------------------------------------------------------------------
@@ -1118,7 +1119,8 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
                 // - it uses the same precision as SCI, but extra '0' may have to be inserted in the mantissa
                 //   if the decimal point goes past the precision
 
-                // check width and precision
+                // 1. Check width and precision
+                // ----------------------------
                 let mut sci_exponent = decimal_point - 1;
                 // ENG shifts the exponent down to multiple of 3, and shifts the '.' right accordingly
                 let mut eng_exp_shift = match self.options.mode {
@@ -1192,8 +1194,8 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
                     }
                 }
 
-                // Mantissa
-                // --------
+                // 2. Mantissa
+                // -----------
                 //   |=>|               decimal_point = -2
                 //      |<=====>|       num_digits    =  7
                 // [0.00]2480649?????
@@ -1204,9 +1206,9 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
                 // Lengths (without the mantissa sign)
                 // - precision = None:    m = 1 + num_digits = 8, e = 1 + num_exp_digits = 3
                 // - precision = Some(4): m = 2 + precision  = 6, e = 1 + num_exp_digits = 3
+                // - in ENG mode: mantissa may have 2 extra digits (w or w/o precision spec)
 
-                // Rounding
-                // --------
+                // a) Rounding
                 //            DDP = 1 (SCI)                      DDP = 1 (ENG)
                 // --------------------------------------------------------------------------
                 // 9.99573E11           decimal_point = 11                 decimal_point = 11
@@ -1229,10 +1231,13 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
                             start_ptr = start_ptr.sub(1);
                         }
                         let carry = usize::from(left || right);
-                        num_digits = 1 + carry + p as usize;
-                        decimal_point += carry;
-                        eng_exp_shift += carry;
-                        if eng_exp_shift == 3 { eng_exp_shift = 0; }
+                        num_digits = 1 + p as usize;
+                        decimal_point += carry as i32;
+                        eng_exp_shift = if self.options.mode != FmtMode::Eng || eng_exp_shift == 2 && carry == 1 {
+                            0
+                        } else {
+                            eng_exp_shift + carry
+                        };
                         #[allow(unused_assignments)] {
                             // just for safety; not used later
                             if self.options.mode != FmtMode::Eng { num_exp_digits += 1; }
@@ -1242,10 +1247,12 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
                     }
                 }
 
-                // add extra zeros to complete the SCI fractional part and/or the ENG integer part if necessary
+                // b) Add extra zeros to complete the SCI fractional part and/or the ENG integer part if necessary.
                 // (precision may be set to add ".0" to ENG integers; in that case, it includes eng_exp_shift)
-                let num_digits_wanted = 1 + max(precision.unwrap_or(0) as i32, eng_exp_shift as i32);
-                let extra_zeros = max(0, num_digits_wanted - num_digits as i32) as usize;
+                let num_digits_wanted = 1 + max(precision.unwrap_or(num_digits as u32 - 1) as usize, eng_exp_shift);
+                //let extra_zeros = max(0, num_digits_wanted as i32 - num_digits as i32) as usize;
+                assert!(num_digits_wanted >= num_digits, "num_digits_wanted ({num_digits_wanted}) should be >= num_digits({num_digits})");
+                let extra_zeros = num_digits_wanted - num_digits;
                 if extra_zeros > 0 {
                     ptr::write_bytes(start_ptr.add(num_digits), b'0', extra_zeros);
                     num_digits += extra_zeros;
@@ -1253,50 +1260,37 @@ impl NumFormat<f64, u64> for NumFmtBuffer {
                         end_ptr = end_ptr.add(extra_zeros);     // just for safety; not used later
                     }
                 }
+                assert_eq!(num_digits_wanted, num_digits);
 
-                // let num_decimals_sci = precision.unwrap_or(num_digits as u32 - 1) as i32;
-                // let num_decimals = max(0, num_decimals_sci - eng_exp_shift as i32) as usize;
-                // let num_bytes = min(num_digits - 1, num_decimals);
-                if num_digits_wanted > 1 {
-                    let num_bytes = (num_digits_wanted - 1) as usize;
-                    match decimal_digits_position {
-                        0 => { // FIX/STD changed to SCI (not ENG): D-D.d-d or D-D(0-0)[.0]
-                            ptr::copy(start_ptr.add(1), start_ptr.add(2), num_bytes);
-                        }
-                        1 => { // SCI or ENG mode
-                            // let digit = *start_ptr;
-                            // *self.ptr = digit;
-                            ptr::copy(self.ptr.add(1), self.ptr, 1 + eng_exp_shift);
-                        }
-                        _ => { // FIX/STD changed to SCI (not ENG): 0.d-d or 0.(0-0)d-d
-                            *self.ptr = *start_ptr;
-                            ptr::copy(start_ptr.add(2), self.ptr.add(2), num_bytes);
-                            #[allow(unused_assignments)] {
-                                start_ptr = self.ptr; // just for safety; start_ptr not used later
-                            }
+                // c) Move digits to align to self.ptr and to insert '.'
+                let num_decimals = num_digits - 1 - eng_exp_shift;
+                match decimal_digits_position {
+                    0 => { // FIX/STD changed to SCI (never ENG): Dd-d => D.d-d
+                        ptr::copy(start_ptr.add(1), self.ptr.add(2), num_decimals);
+                    }
+                    1 => { // SCI or ENG mode: ?D-Dd-d => D-D.d-d
+                        ptr::copy(self.ptr.add(1), self.ptr, 1 + eng_exp_shift);
+                    }
+                    _ => { // FIX/STD changed to SCI (never ENG): 0-0Dd-d => D.d-d
+                        *self.ptr = *start_ptr;
+                        ptr::copy(start_ptr.add(1), self.ptr.add(2), num_decimals);
+                        #[allow(unused_assignments)] {
+                            start_ptr = self.ptr; // just for safety; start_ptr not used later
                         }
                     }
+                }
+                if num_decimals > 0 {
                     *self.ptr.add(1 + eng_exp_shift) = b'.';
-                    // let fill = num_decimals as i32 - num_digits as i32 + 1;
-                    // if fill > 0 {
-                    //     ptr::write_bytes(self.ptr.add(2 + num_bytes), b'0', fill as usize);
-                    // }
-                    self.ptr = self.ptr.add(2 + num_decimals + eng_exp_shift);
-                } else /* if decimal_digits_position > 0 */ {
-
-                    // TODO: fix ENG with no trailing zero mode
-
-                    *self.ptr = *start_ptr;
-                    self.ptr = self.ptr.add(1);
-                } /*else { // collapsed with previous case
-                    self.ptr = self.ptr.add(1);
-                }*/
+                    self.ptr = self.ptr.add(num_digits + 1);
+                } else {
+                    self.ptr = self.ptr.add(num_digits);
+                }
                 #[allow(unused_assignments)] {
                     end_ptr = self.ptr; // just for safety; end_ptr not used later
                 }
 
-                // Exponent
-                // --------
+                // 3. Exponent
+                // -----------
                 let scientific_exponent = decimal_point - 1 - eng_exp_shift as i32;
                 if scientific_exponent < 0 {
                     ptr::copy(b"e-" as *const u8, self.ptr, 2);  // TODO: option e or E

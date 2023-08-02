@@ -186,6 +186,8 @@ fn sci() {
 #[test]
 fn eng() {
     let values = vec![
+        (0.9995,              None,       Some(2),    Eng,    true,   "1.00e0"),
+        (0.9995,              None,       Some(2),    Std,    true,   "1.00"),
         // value              width       prec        mode    trail   expected
         // (123.0,               None,       None,       Eng,    true,   "123.0e0"),
         (100.0,               None,       Some(0),    Eng,    true,   "100e0"),
@@ -194,13 +196,13 @@ fn eng() {
         (1000.0,              None,       Some(0),    Eng,    true,   "1e3"),
         //
         (1.234,               None,       Some(1),    Eng,    true,   "1.2e0"),
-        (12.34,               None,       Some(1),    Eng,    true,   "12.0e0"),
-        (123.4,               None,       Some(1),    Eng,    true,   "120.0e0"),
+        (12.34,               None,       Some(1),    Eng,    true,   "12e0"),
+        (123.4,               None,       Some(1),    Eng,    true,   "120e0"),
         (1234.0,              None,       Some(1),    Eng,    true,   "1.2e3"),
         //
         (1.234,               None,       Some(2),    Eng,    true,   "1.23e0"),
         (12.34,               None,       Some(2),    Eng,    true,   "12.3e0"),
-        (123.4,               None,       Some(2),    Eng,    true,   "123.0e0"),
+        (123.4,               None,       Some(2),    Eng,    true,   "123e0"),
         (1234.0,              None,       Some(2),    Eng,    true,   "1.23e3"),
         //
         (1.234,               None,       Some(3),    Eng,    true,   "1.234e0"),
@@ -229,6 +231,7 @@ fn eng() {
 #[test]
 fn special() {
     let values = vec![
+        (999.999,       Some(0),    Some(5),    Std,    true,   "1e3"),
         // 1) special values
         // value            width       prec        mode    trail   expected
         (f64::NAN,          None,       None,       Std,    false,  "NaN"),
